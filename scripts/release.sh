@@ -61,11 +61,14 @@ if [[ -z ${SKIP_NOTARIZE:-} ]]; then
 fi
 
 echo "==> Signing the update"
-if [[ -n ${SPARKLE_KEY_FILE:-} ]]; then
-  SIGNATURE=$($SPARKLE/sign_update --ed-key-file "$SPARKLE_KEY_FILE" $DMG)
-else
-  SIGNATURE=$($SPARKLE/sign_update --account conveta $DMG)
+if [[ -z ${SPARKLE_KEY_FILE:-} ]]; then
+  # Export the key from the keychain for this one signature (generate_keys can read its own item
+  # without a keychain prompt), then delete the copy.
+  SPARKLE_KEY_FILE=$(mktemp -u)
+  trap 'rm -f "$SPARKLE_KEY_FILE"' EXIT
+  $SPARKLE/generate_keys --account conveta -x "$SPARKLE_KEY_FILE" >/dev/null
 fi
+SIGNATURE=$($SPARKLE/sign_update --ed-key-file "$SPARKLE_KEY_FILE" $DMG)
 MIN_OS=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" $OUT/Conveta.app/Contents/Info.plist)
 cat > $OUT/appcast.xml <<XML
 <?xml version="1.0" encoding="utf-8"?>
