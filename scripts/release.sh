@@ -34,6 +34,31 @@ xcodebuild -project Conveta.xcodeproj -scheme Conveta -configuration Release -de
   OTHER_CODE_SIGN_FLAGS="--timestamp" build > $OUT/build.log 2>&1 || { grep -E "error:" $OUT/build.log | head -20; exit 1; }
 APP=$DERIVED/Build/Products/Release/Conveta.app
 ditto $APP $OUT/Conveta.app
+
+# Sparkle's helpers arrive signed by Sparkle without a timestamp. Notarization wants every program
+# signed with our Developer ID, so re-sign them inside out, then the framework and the app.
+echo "==> Signing Sparkle's helpers"
+SPARKLE_FW=$OUT/Conveta.app/Contents/Frameworks/Sparkle.framework/Versions/B
+sign() { codesign --force --timestamp --options runtime --sign "$IDENTITY" "$@"; }
+sign "$SPARKLE_FW/XPCServices/Installer.xpc"
+sign --preserve-metadata=entitlements "$SPARKLE_FW/XPCServices/Downloader.xpc"
+sign "$SPARKLE_FW/Autoupdate"
+sign "$SPARKLE_FW/Updater.app"
+sign "$OUT/Conveta.app/Contents/Frameworks/Sparkle.framework"
+sign --preserve-metadata=entitlements "$OUT/Conveta.app/Contents/PlugIns/ConvetaFinder.appex"
+sign --preserve-metadata=entitlements "$OUT/Conveta.app"
+
+# What notarization checks, checked here first so a refusal never costs a round trip to Apple.
+for binary in $(find $OUT/Conveta.app -type f -perm -u+x); do
+  file "$binary" | grep -q "Mach-O" || continue
+  details=$(codesign -dvv "$binary" 2>&1)
+  grep -q "Authority=Developer ID Application" <<<"$details" || { echo "Not signed with Developer ID: $binary"; exit 1; }
+  grep -q "Timestamp=" <<<"$details" || { echo "No secure timestamp: $binary"; exit 1; }
+  grep -q "runtime" <<<"$details" || { echo "No hardened runtime: $binary"; exit 1; }
+  if codesign -d --entitlements - --xml "$binary" 2>/dev/null | grep -q "get-task-allow"; then
+    echo "Debugger entitlement in a shipped binary: $binary"; exit 1
+  fi
+done
 codesign --verify --deep --strict --verbose=2 $OUT/Conveta.app
 lipo -info $OUT/Conveta.app/Contents/MacOS/Conveta
 scripts/check-leaks.sh $OUT/Conveta.app
