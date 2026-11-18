@@ -1,0 +1,81 @@
+name: Conveta
+options:
+  bundleIdPrefix: com.1804audio
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: 7CPDA6H8CT
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_HARDENED_RUNTIME: YES
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: YES
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    # The app group both targets share for Finder hand-offs.
+    APP_GROUP_ID: "$(DEVELOPMENT_TEAM).com.1804audio.conveta"
+  configs:
+    Debug:
+      CODE_SIGN_STYLE: Manual
+      CODE_SIGN_IDENTITY: "Developer ID Application"
+    Release:
+      CODE_SIGN_STYLE: Automatic
+      CODE_SIGN_IDENTITY: "Apple Distribution"
+
+packages:
+  ConvetaKit:
+    path: Packages/ConvetaKit
+
+targets:
+  Conveta:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+      - path: Shared
+    dependencies:
+      - package: ConvetaKit
+      - target: ConvetaFinder
+        embed: true
+        codeSign: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.1804audio.Conveta
+        PRODUCT_NAME: Conveta
+        INFOPLIST_FILE: App/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/Resources/Conveta.entitlements
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        ENABLE_APP_SANDBOX: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+    scheme:
+      testTargets: []
+
+  ConvetaFinder:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: FinderExtension
+      - path: Shared
+    dependencies:
+      - package: ConvetaKit
+      - sdk: FinderSync.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.1804audio.Conveta.FinderSync
+        PRODUCT_NAME: ConvetaFinder
+        INFOPLIST_FILE: FinderExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: FinderExtension/ConvetaFinder.entitlements
+        # FIFinderSync's overrides are nonisolated while AppKit menus are main-actor only, and Finder
+        # calls the extension on the main thread. Swift 6 can't express that, so this small target
+        # uses the Swift 5 language mode. The app and ConvetaKit stay in strict Swift 6.
+        SWIFT_VERSION: "5.0"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        ENABLE_APP_SANDBOX: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks"
