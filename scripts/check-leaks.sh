@@ -27,6 +27,8 @@ report() { echo "LEAK  $1: $2"; found=1; }
 while IFS= read -r file; do
   [ -f "$file" ] || continue
   case "$file" in *.png|*.jpg|*.car|*.icns) continue;; esac
+  # This script holds the patterns themselves.
+  [ "$file" = "scripts/check-leaks.sh" ] && continue
   hits=$(grep -nIE "$(IFS='|'; echo "${patterns[*]}")" "$file" 2>/dev/null | grep -vE "$allowed" | head -3)
   [ -n "$hits" ] && report "$file" "$hits"
   for value in "${mine[@]}"; do
