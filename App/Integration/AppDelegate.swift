@@ -46,13 +46,16 @@ final class ServiceProvider: NSObject {
 
     init(state: AppState) { self.state = state }
 
+    /// "Add to Conveta" has no user data; "Convert to MP3 with Conveta" and friends carry the format.
+    /// Services work on every disk, unlike the Finder Sync menu, which only covers the startup disk.
     @objc func convertFiles(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
         let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
         guard !urls.isEmpty else {
             error.pointee = "No files were selected."
             return
         }
-        state.open(urls)
+        let format = userData.flatMap(OutputFormat.init(rawValue:))
+        state.receive(HandoffRequest(paths: urls.map(\.path), format: format))
     }
 }
 

@@ -62,7 +62,7 @@ private struct FinderSettings: View {
                     }
                 } label: {
                     Text("Right-click menu in Finder")
-                    Text("Select files, right-click, and choose Convert with Conveta → MP4, JPEG, and more.")
+                    Text("Select files on your Mac, right-click, and choose Convert with Conveta → MP4, JPEG, and more.")
                 }
             } footer: {
                 if !extensionEnabled {
@@ -80,8 +80,8 @@ private struct FinderSettings: View {
                 LabeledContent {
                     Text("Always on").foregroundStyle(.secondary)
                 } label: {
-                    Text("Services menu")
-                    Text("“Add to Conveta” is in the Services menu of any app that has files selected.")
+                    Text("On every disk")
+                    Text("Right-click files on any drive for Convert to MP3, MP4, JPEG or PNG with Conveta, or Add to Conveta. Choose which appear in System Settings → Keyboard → Keyboard Shortcuts → Services.")
                 }
             }
         }

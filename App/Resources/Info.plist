@@ -83,6 +83,85 @@
 				<string>com.adobe.pdf</string>
 			</array>
 		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Convert to MP3 with Conveta</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>convertFiles</string>
+			<key>NSPortName</key>
+			<string>Conveta</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSUserData</key>
+			<string>mp3</string>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.audio</string>
+				<string>public.movie</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Convert to MP4 with Conveta</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>convertFiles</string>
+			<key>NSPortName</key>
+			<string>Conveta</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSUserData</key>
+			<string>mp4</string>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.movie</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Convert to JPEG with Conveta</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>convertFiles</string>
+			<key>NSPortName</key>
+			<string>Conveta</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSUserData</key>
+			<string>jpeg</string>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>com.adobe.pdf</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Convert to PNG with Conveta</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>convertFiles</string>
+			<key>NSPortName</key>
+			<string>Conveta</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSUserData</key>
+			<string>png</string>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>com.adobe.pdf</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

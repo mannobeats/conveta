@@ -9,23 +9,13 @@ import UniformTypeIdentifiers
 final class FinderSync: FIFinderSync {
     /// Formats offered for the current selection, indexed by menu item tag.
     private var offered: [OutputFormat] = []
-    private var observers: [NSObjectProtocol] = []
 
     override init() {
         super.init()
-        Self.watchAllVolumes()
-        let center = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
-            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
-                Self.watchAllVolumes()
-            })
-        }
-    }
-
-    /// Finder only asks for menus inside watched folders, so watch every mounted volume.
-    private static func watchAllVolumes() {
-        let volumes = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil, options: [.skipHiddenVolumes]) ?? []
-        FIFinderSyncController.default().directoryURLs = Set(volumes + [URL(filePath: "/")])
+        // Watch only the root. Finder shows a sync extension's icon on every watched folder that
+        // appears in the sidebar, so watching volumes (or Desktop, Documents...) would replace their
+        // icons with Conveta's. Never add sidebar locations here.
+        FIFinderSyncController.default().directoryURLs = [URL(filePath: "/"), URL(filePath: "/Volumes")]
     }
 
     override func menu(for menuKind: FIMenuKind) -> NSMenu? {
