@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Xcode build phase: copies the FFmpeg helpers into Conveta.app/Contents/Helpers and signs them
-# with the sandbox-inherit entitlement, so they run inside the app's sandbox.
+# with the hardened runtime, as notarization requires.
 set -euo pipefail
 SOURCE="$SRCROOT/Vendor/FFmpeg/bin"
 DEST="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers"

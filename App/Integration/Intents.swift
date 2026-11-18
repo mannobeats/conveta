@@ -78,3 +78,26 @@ struct AddFilesIntent: AppIntent {
         return .result()
     }
 }
+
+/// "Download Video" in Shortcuts: a link from YouTube, Instagram, TikTok and more, saved as any format.
+struct DownloadVideoIntent: AppIntent {
+    static let title: LocalizedStringResource = "Download Video"
+    static let description = IntentDescription("Downloads a video from YouTube, Instagram, TikTok and other sites, and saves it in the format you choose.")
+    static let supportedModes: IntentModes = .foreground
+
+    @Parameter(title: "Link")
+    var link: URL
+
+    @Parameter(title: "Format", default: .mp4)
+    var format: IntentFormat
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Download \(\.$link) as \(\.$format)")
+    }
+
+    func perform() async throws -> some IntentResult {
+        guard LinkDetector.isWebLink(link) else { throw $link.needsValueError("Which web link should Conveta download?") }
+        await AppState.shared.queue.addLinks([link], format: format.outputFormat, start: true)
+        return .result()
+    }
+}

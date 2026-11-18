@@ -43,7 +43,7 @@ struct StatusBar: View {
         guard !done.isEmpty else { return nil }
         let before = done.reduce(Int64(0)) { $0 + ($1.info?.fileSize ?? 0) }
         let after = done.reduce(Int64(0)) { $0 + ($1.outputSize ?? 0) }
-        let count = done.count == 1 ? "1 file converted" : "\(done.count) files converted"
+        let count = done.count == 1 ? "1 file done" : "\(done.count) files done"
         guard before > after, before > 0 else { return count }
         return "\(count) · \((before - after).fileSizeText) saved"
     }
@@ -66,6 +66,8 @@ struct DestinationMenu: View {
             .pickerStyle(.inline)
             Divider()
             Button("Choose Folder…") { chooseFolder() }
+            Divider()
+            Text("Downloads from links go to Downloads when saving next to originals.")
         } label: {
             Label {
                 Text("\(Text("Save to:").foregroundStyle(.secondary)) \(title)")

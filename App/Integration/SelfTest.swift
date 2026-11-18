@@ -113,6 +113,23 @@ private final class Runner {
         let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.filter { $0.hasPrefix(".conveta-") } ?? []
         check("no working folders after cancel", leftovers.isEmpty, "\(leftovers)")
 
+        // Pasted text finds links; downloads run end to end when network tests are on.
+        check("links found in pasted text", LinkDetector.links(in: "see https://youtu.be/jNQXAC9IVRw now").count == 1)
+        if ProcessInfo.processInfo.environment["CONVETA_NETWORK_TESTS"] == "1" {
+            queue.clearFinished()
+            queue.remove(Set(queue.jobs.map(\.id)))
+            state.preferences.destination = .folder
+            state.preferences.customFolder = try folder.bookmarkData()
+            queue.addLinks([URL(string: "https://www.youtube.com/watch?v=jNQXAC9IVRw")!], format: .mp3, start: true)
+            try await waitUntil("download finishes", seconds: 180) {
+                queue.jobs.first.map { $0.state == .done || $0.state.isUnsupported || { if case .failed = $0.state { true } else { false } }($0) } ?? false
+            }
+            let job = queue.jobs.first
+            check("engine installed", state.downloader.version != nil, "\(state.downloader.status)")
+            check("link read", job?.remote?.title == "Me at the zoo", "\(String(describing: job?.state))")
+            check("downloaded as MP3", job?.output?.lastPathComponent == "Me at the zoo.mp3", "\(String(describing: job?.state))")
+        }
+
         // Hand-offs from Finder go through the shared app group.
         let request = HandoffRequest(paths: [png.path], format: .heic)
         AppGroup.handoffs.save(request)

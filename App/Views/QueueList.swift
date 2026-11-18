@@ -47,7 +47,7 @@ private struct JobMenu: View {
         Divider()
         Button("Show Converted File in Finder") { queue.revealOutputs(of: ids) }
             .disabled(!jobs.contains { $0.output != nil })
-        Button("Show Original in Finder") { queue.revealSources(of: ids) }
+        Button(jobs.allSatisfy(\.isDownload) ? "Open Page in Browser" : "Show Original in Finder") { queue.revealSources(of: ids) }
         Divider()
         Button("Remove from List", role: .destructive) { queue.remove(ids) }
     }
@@ -94,7 +94,10 @@ struct JobRow: View {
         switch job.state {
         case .unsupported(let reason), .failed(let reason):
             return reason
+        case .probing where job.isDownload:
+            return job.source.absoluteString
         default:
+            if let remote = job.remote { return remote.details }
             var parts: [String] = []
             if let info = job.info {
                 parts.append(info.fileSize.fileSizeText)
@@ -111,7 +114,7 @@ private struct Thumbnail: View {
     var body: some View {
         ZStack {
             // Audio and PDF previews say little at this size; Conveta's own artwork says more.
-            if let image = job.thumbnail, job.kind == .video || job.kind == .image {
+            if let image = job.thumbnail, job.isDownload || job.kind == .video || job.kind == .image {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -120,7 +123,7 @@ private struct Thumbnail: View {
                     .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(.separator.opacity(0.6), lineWidth: 0.5))
                     .transition(.opacity)
             } else {
-                KindArtwork(kind: job.kind ?? (job.state.isUnsupported ? nil : MediaKind(url: job.source)))
+                KindArtwork(kind: job.kind ?? (job.isDownload ? .video : (job.state.isUnsupported ? nil : MediaKind(url: job.source))))
             }
         }
         .animation(Theme.motion, value: job.thumbnail != nil)
@@ -144,6 +147,10 @@ private struct JobStatus: View {
     @ViewBuilder private var content: some View {
         switch job.state {
         case .probing:
+            if job.isDownload {
+                Text(state.downloader.status == .installing ? "Setting up downloads…" : "Reading link…")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             ProgressView().controlSize(.small)
         case .ready, .cancelled:
             if job.state == .cancelled {
@@ -175,7 +182,7 @@ private struct JobStatus: View {
                 .foregroundStyle(.orange)
                 .accessibilityLabel("Failed")
         case .unsupported:
-            Text("Can’t Convert").font(.caption).foregroundStyle(.secondary)
+            Text(job.isDownload ? "Can’t Download" : "Can’t Convert").font(.caption).foregroundStyle(.secondary)
         }
     }
 

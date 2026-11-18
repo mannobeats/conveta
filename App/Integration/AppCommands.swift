@@ -40,6 +40,8 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("Add Files…") { state.isImporterPresented = true }
                 .keyboardShortcut("o")
+            Button("Download from Link…") { state.isLinkSheetPresented = true }
+                .keyboardShortcut("l")
         }
         CommandGroup(after: .newItem) {
             Divider()
@@ -53,7 +55,7 @@ struct AppCommands: Commands {
             Button("Show Converted File in Finder") { state.queue.revealOutputs(of: state.queue.selection) }
                 .keyboardShortcut("r", modifiers: [.command, .option])
                 .disabled(!menu.canRevealOutput)
-            Button("Show Original in Finder") { state.queue.revealSources(of: state.queue.selection) }
+            Button("Show Original") { state.queue.revealSources(of: state.queue.selection) }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(!menu.hasSelection)
         }

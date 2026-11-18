@@ -8,6 +8,7 @@ struct EmptyDropView: View {
     let choose: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openSettings) private var openSettings
+    @Environment(AppState.self) private var state
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,14 +19,18 @@ struct EmptyDropView: View {
                     Text(isTargeted ? "Drop to Add" : "Drop Files to Convert")
                         .font(.title2.weight(.semibold))
                         .contentTransition(.opacity)
-                    Text("Videos, audio, images and PDFs. One file or a thousand.")
+                    Text("Videos, audio, images and PDFs. Or paste a YouTube, Instagram or TikTok link.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                 }
-                Button("Choose Files…", action: choose)
-                    .buttonStyle(.glass)
-                    .controlSize(.large)
-                    .keyboardShortcut("o", modifiers: .command)
+                HStack(spacing: 10) {
+                    Button("Choose Files…", action: choose)
+                        .buttonStyle(.glass)
+                        .controlSize(.large)
+                    Button("Download from Link…") { state.isLinkSheetPresented = true }
+                        .buttonStyle(.glass)
+                        .controlSize(.large)
+                }
             }
             .padding(40)
             .frame(maxWidth: 520)

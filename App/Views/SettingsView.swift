@@ -7,7 +7,11 @@ struct SettingsView: View {
         TabView {
             Tab("General", systemImage: "gearshape") { GeneralSettings() }
             Tab("Finder", systemImage: "cursorarrow.click.2") { FinderSettings() }
-            Tab("Folders", systemImage: "lock.shield") { FolderSettings() }
+            Tab("Downloads", systemImage: "arrow.down.circle") { DownloadSettings() }
+            // Folder permissions only matter when the app runs sandboxed.
+            if ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil {
+                Tab("Folders", systemImage: "lock.shield") { FolderSettings() }
+            }
         }
         .scenePadding()
         .frame(width: 500)
@@ -88,6 +92,70 @@ private struct FinderSettings: View {
         .formStyle(.grouped)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             extensionEnabled = FIFinderSyncController.isExtensionEnabled
+        }
+    }
+}
+
+private struct DownloadSettings: View {
+    @Environment(AppState.self) private var state
+    @State private var isUpdating = false
+
+    private let browsers: [(id: String, name: String)] = [
+        ("safari", "Safari"), ("chrome", "Chrome"), ("firefox", "Firefox"), ("brave", "Brave"),
+        ("edge", "Edge"), ("arc", "Arc"), ("vivaldi", "Vivaldi"), ("opera", "Opera"),
+    ]
+
+    var body: some View {
+        @Bindable var preferences = state.preferences
+        let downloader = state.downloader
+        Form {
+            Section {
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        if isUpdating || downloader.status == .installing { ProgressView().controlSize(.small) }
+                        Button(downloader.version == nil ? "Install" : "Check for Update") {
+                            isUpdating = true
+                            Task {
+                                if downloader.version == nil { try? await downloader.install() } else { await downloader.updateIfStale(force: true) }
+                                isUpdating = false
+                            }
+                        }
+                        .disabled(isUpdating || downloader.status == .installing)
+                    }
+                } label: {
+                    Text("Download engine")
+                    Text(engineDescription(downloader))
+                }
+            } footer: {
+                Text("Downloads use yt-dlp, an open-source engine for YouTube, Instagram, TikTok, X, Vimeo and over a thousand other sites. Conveta installs it from its official GitHub release, verifies its checksum, and updates it every few days, because sites change often.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Picker("Use sign-ins from", selection: Binding(get: { preferences.cookiesBrowser ?? "" }, set: { preferences.cookiesBrowser = $0.isEmpty ? nil : $0 })) {
+                    Text("No Browser").tag("")
+                    Divider()
+                    ForEach(browsers, id: \.id) { Text($0.name).tag($0.id) }
+                }
+            } footer: {
+                Text("Some posts (private Instagram accounts, age-restricted videos) need you to be signed in. Choose the browser you’re signed in with, and Conveta borrows its cookies for those downloads only. Safari needs Full Disk Access for Conveta.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Text("Download only videos you own or have permission to use, and respect each site’s terms.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func engineDescription(_ downloader: Downloader) -> String {
+        switch downloader.status {
+        case .notInstalled: return "Installs the first time you add a link (about 35 MB)."
+        case .installing: return "Installing…"
+        case .failed(let reason): return reason
+        case .ready(let version):
+            let checked = downloader.lastChecked.map { " · checked \($0.formatted(.relative(presentation: .named)))" } ?? ""
+            return "yt-dlp \(version)\(checked)"
         }
     }
 }

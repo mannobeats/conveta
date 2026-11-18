@@ -14,15 +14,17 @@ final class ConversionQueue {
 
     let preferences: Preferences
     let access: FolderAccess
-    @ObservationIgnored private let tools = FFmpegTools.bundled()
+    let downloader: Downloader
+    @ObservationIgnored let tools = FFmpegTools.bundled()
     @ObservationIgnored private lazy var service = ConversionService(tools: tools)
     @ObservationIgnored private var tasks: [ConversionJob.ID: Task<Void, Never>] = [:]
     @ObservationIgnored private var batch: [ConversionJob.ID] = []
     @ObservationIgnored var onBatchFinished: (([ConversionJob]) -> Void)?
 
-    init(preferences: Preferences, access: FolderAccess) {
+    init(preferences: Preferences, access: FolderAccess, downloader: Downloader) {
         self.preferences = preferences
         self.access = access
+        self.downloader = downloader
     }
 
     // MARK: Reading
@@ -54,8 +56,10 @@ final class ConversionQueue {
     /// Adds files (folders are searched for media). With `format`, files that can become it use it;
     /// with `start`, they convert as soon as they are read.
     func add(_ urls: [URL], format: OutputFormat? = nil, start: Bool = false) {
+        let links = urls.filter(LinkDetector.isWebLink)
+        if !links.isEmpty { addLinks(links, format: format, start: start) }
         let known = Set(jobs.filter { !$0.state.isFinished }.map(\.source.standardizedFileURL))
-        let files = Self.expand(urls).filter { !known.contains($0.standardizedFileURL) }
+        let files = Self.expand(urls.filter(\.isFileURL)).filter { !known.contains($0.standardizedFileURL) }
         guard !files.isEmpty else { return }
 
         let added = files.map { url in
@@ -84,6 +88,49 @@ final class ConversionQueue {
         } catch {
             job.state = .unsupported(error.localizedDescription)
         }
+    }
+
+    /// Adds web links (YouTube, Instagram, TikTok and more). Each is read for its title and
+    /// thumbnail, then downloads like a file converts. The engine installs on first use.
+    func addLinks(_ links: [URL], format: OutputFormat? = nil, start: Bool = false) {
+        let known = Set(jobs.filter { !$0.state.isFinished }.map(\.source.absoluteString))
+        let fresh = links.filter { !known.contains($0.absoluteString) }
+        guard !fresh.isEmpty else { return }
+        let added = fresh.map { ConversionJob(source: $0, settings: ConversionSettings(format: format ?? .mp4)) }
+        jobs.append(contentsOf: added)
+        let start = start || preferences.startImmediately
+        Task {
+            do {
+                try await downloader.ensureReady()
+            } catch {
+                for job in added { job.state = .unsupported(error.localizedDescription) }
+                return
+            }
+            await withDiscardingTaskGroup { group in
+                for job in added { group.addTask { await self.prepareLink(job, format: format) } }
+            }
+            if start { convert(added) }
+        }
+    }
+
+    private func prepareLink(_ job: ConversionJob, format: OutputFormat?) async {
+        do {
+            let media = try await downloader.engine.inspect(job.source)
+            job.remote = media
+            job.info = media.plannedInfo
+            var settings = preferences.settings(for: media.kind)
+            if let format, media.kind.outputFormats.contains(format) { settings.format = format }
+            job.settings = settings
+            job.state = .ready
+            if let thumbnail = media.thumbnail { job.thumbnail = await Self.image(at: thumbnail) }
+        } catch {
+            job.state = .unsupported(error.localizedDescription)
+        }
+    }
+
+    private static func image(at url: URL) async -> NSImage? {
+        guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
+        return NSImage(data: data)
     }
 
     /// Files inside folders, skipping hidden files and packages.
@@ -184,13 +231,21 @@ final class ConversionQueue {
         let settings = job.settings
         let source = job.source
         let service = service
+        let remote = job.remote
+        let downloads = remote.map { _ in DownloadService(engine: downloader.engine, conversion: service) }
 
         tasks[job.id] = Task {
             do {
-                guard access.canRead(source) else { throw ConversionError.unreadable }
-                guard access.canWrite(to: folder) else { throw ConversionError.noWriteAccess(folder) }
-                let output = try await service.convert(source, info: info, settings: settings, into: folder) { value in
+                let report: ProgressHandler = { value in
                     Task { @MainActor in if job.state == .converting { job.progress = value } }
+                }
+                guard access.canWrite(to: folder) else { throw ConversionError.noWriteAccess(folder) }
+                let output: URL
+                if let remote, let downloads {
+                    output = try await downloads.download(remote, settings: settings, into: folder, progress: report)
+                } else {
+                    guard access.canRead(source) else { throw ConversionError.unreadable }
+                    output = try await service.convert(source, info: info, settings: settings, into: folder, progress: report)
                 }
                 job.output = output
                 job.outputSize = Self.size(of: output)
@@ -212,7 +267,7 @@ final class ConversionQueue {
     private func requestMissingAccess(for jobs: [ConversionJob]) {
         var missing: [URL] = []
         for job in jobs {
-            if !access.canRead(job.source) { missing.append(job.source.deletingLastPathComponent()) }
+            if !job.isDownload, !access.canRead(job.source) { missing.append(job.source.deletingLastPathComponent()) }
             if let folder = outputFolder(for: job), !access.canWrite(to: folder) { missing.append(folder) }
         }
         guard let shared = FolderAccess.commonAncestor(of: missing) else { return }
@@ -222,15 +277,15 @@ final class ConversionQueue {
 
     func outputFolder(for job: ConversionJob) -> URL? {
         switch preferences.destination {
-        case .nextToOriginal:
+        case .nextToOriginal where !job.isDownload:
             return job.source.deletingLastPathComponent()
-        case .downloads:
+        case .nextToOriginal, .downloads:  // a download has no original folder
             return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
         case .folder:
+            guard let bookmark = preferences.customFolder else { return nil }
             var stale = false
-            return preferences.customFolder.flatMap {
-                try? URL(resolvingBookmarkData: $0, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale)
-            }
+            return (try? URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale))
+                ?? (try? URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale))
         }
     }
 
@@ -258,9 +313,12 @@ final class ConversionQueue {
         if !urls.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(urls) }
     }
 
+    /// Shows original files in Finder, and opens the pages of downloads in the browser.
     func revealSources(of ids: Set<ConversionJob.ID>) {
-        let urls = jobs.filter { ids.contains($0.id) }.map(\.source)
-        if !urls.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(urls) }
+        let selected = jobs.filter { ids.contains($0.id) }
+        let files = selected.filter { !$0.isDownload }.map(\.source)
+        if !files.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(files) }
+        for job in selected where job.isDownload { NSWorkspace.shared.open(job.remote?.pageURL ?? job.source) }
     }
 }
 

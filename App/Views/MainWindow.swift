@@ -46,6 +46,16 @@ struct MainWindow: View {
                     }
                 }
         }
+        .sheet(isPresented: $state.isLinkSheetPresented) { LinkSheet() }
+        .onPasteCommand(of: [.url, .plainText]) { providers in
+            let app = state  // the main-actor model; the environment wrapper can't cross threads
+            for provider in providers {
+                _ = provider.loadObject(ofClass: NSString.self) { text, _ in
+                    guard let text = text as? String else { return }
+                    Task { @MainActor in app.pasteLinks(text) }
+                }
+            }
+        }
         .fileImporter(isPresented: $state.isImporterPresented,
                       allowedContentTypes: [.movie, .audio, .image, .pdf, .folder],
                       allowsMultipleSelection: true) { result in
@@ -62,7 +72,7 @@ struct MainWindow: View {
         guard !jobs.isEmpty else { return "" }
         let done = jobs.filter(\.state.isFinished).count
         let count = jobs.count == 1 ? "1 file" : "\(jobs.count) files"
-        return done > 0 ? "\(count), \(done) converted" : count
+        return done > 0 ? "\(count), \(done) done" : count
     }
 }
 
@@ -86,6 +96,10 @@ struct MainToolbar: ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Button("Add Files", systemImage: "plus") { state.isImporterPresented = true }
                 .help("Add files to convert (Command-O)")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button("Download from Link", systemImage: "link.badge.plus") { state.isLinkSheetPresented = true }
+                .help("Download a video from YouTube, Instagram, TikTok and more (Command-L)")
         }
         ToolbarItem(placement: .primaryAction) {
             Button("Clear Finished", systemImage: "checkmark.circle.badge.xmark") { queue.clearFinished() }

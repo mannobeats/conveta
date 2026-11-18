@@ -1,7 +1,11 @@
 # Conveta
 
 A native Mac app that converts video, audio, images and PDFs — one file or a thousand — using
-the Mac's own hardware encoders. Drop files in, right-click them in Finder, or run it from Shortcuts.
+the Mac's own hardware encoders, and downloads videos from YouTube, Instagram, TikTok and other sites.
+Drop files in, paste a link, right-click files in Finder, or run it from Shortcuts.
+
+Conveta is distributed directly (Developer ID, notarized), not through the Mac App Store, whose
+rules don't allow downloading from third-party sites.
 
 ## What it converts
 
@@ -22,13 +26,22 @@ Two engines, picked per file:
   libwebp and dav1d, linked statically, signed to run inside the app's sandbox. H.264 and HEVC still
   go through VideoToolbox. Lossy audio is never re-encoded above the source's bitrate.
 
+## Downloads
+
+Paste a link (⌘L, or ⌘V in the window, or drag it from the browser) and pick any format: MP4,
+MP3, GIF and the rest. Downloads use [yt-dlp](https://github.com/yt-dlp/yt-dlp) (public domain),
+which Conveta installs on first use from its official release, verifies against the release's
+SHA-256 list, and updates every few days. Video arrives as H.264/AAC MP4 when the site offers it,
+so MP4 downloads need no re-encoding. For posts that need an account, Settings → Downloads can
+borrow a browser's sign-in. Download only what you have the right to use.
+
 ## Ways in
 
 - **Window:** drag files or folders in, pick a format per kind in the inspector, press Convert (⌘↩).
-- **Finder:** right-click → *Convert with Conveta* → format. Turn it on once in Settings → Finder.
-- **Services:** *Add to Conveta* in any app's Services menu.
-- **Shortcuts:** *Convert Files* and *Add Files to Conveta* actions; usable as Finder Quick Actions.
-- **URLs:** `conveta://action/convert`, `/stop`, `/add`, `/clear`.
+- **Finder (startup disk):** right-click → *Convert with Conveta* → format. Turn it on once in Settings → Finder.
+- **Every disk:** right-click → *Convert to MP3 / MP4 / JPEG / PNG with Conveta* or *Add to Conveta* (Services).
+- **Shortcuts:** *Convert Files*, *Add Files to Conveta* and *Download Video* actions.
+- **URLs:** `conveta://download?url=…&format=mp3`, `conveta://action/convert`, `/stop`, `/add`, `/link`, `/clear`.
 
 ## Build and test
 
@@ -37,7 +50,8 @@ Requires Xcode 26+, macOS 26+, and [XcodeGen](https://github.com/yonaskolb/Xcode
 ```bash
 scripts/build-ffmpeg.sh   # once: builds the LGPL FFmpeg helper into Vendor/FFmpeg (pinned, checksummed)
 scripts/build.sh --open   # generate the project, build with zero warnings, install to ~/Applications, launch
-scripts/test.sh           # ConvetaKit tests + the app's sandboxed self-test (Conveta --selftest)
+scripts/test.sh           # ConvetaKit tests + the app's self-test (Conveta --selftest)
+CONVETA_NETWORK_TESTS=1 scripts/test.sh   # also real downloads and engine install
 ```
 
 FFmpeg is licensed under the LGPL 2.1 or later; `Vendor/FFmpeg/BUILDINFO.txt` records the exact

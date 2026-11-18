@@ -26,6 +26,8 @@ final class Preferences {
     var startImmediately: Bool { didSet { store.set(startImmediately, forKey: Key.startImmediately) } }
     /// How many files convert at once. Video encoders share the media engine, so more is not always faster.
     var parallelJobs: Int { didSet { store.set(parallelJobs, forKey: Key.parallel) } }
+    /// A browser whose sign-ins downloads may use ("safari", "chrome"...), for posts that need an account.
+    var cookiesBrowser: String? { didSet { store.set(cookiesBrowser, forKey: Key.cookies) } }
 
     @ObservationIgnored private let store: UserDefaults
 
@@ -44,6 +46,7 @@ final class Preferences {
         playSoundWhenDone = store.object(forKey: Key.sound) as? Bool ?? true
         startImmediately = store.object(forKey: Key.startImmediately) as? Bool ?? false
         parallelJobs = store.object(forKey: Key.parallel) as? Int ?? Self.recommendedParallelJobs
+        cookiesBrowser = store.string(forKey: Key.cookies)
     }
 
     static var recommendedParallelJobs: Int {
@@ -77,5 +80,6 @@ final class Preferences {
         static let sound = "playSoundWhenDone"
         static let startImmediately = "startImmediately"
         static let parallel = "parallelJobs"
+        static let cookies = "cookiesBrowser"
     }
 }

@@ -30,7 +30,10 @@ final class ConversionJob: Identifiable {
     }
 
     let id = UUID()
+    /// A file on disk, or the web link of a download.
     let source: URL
+    /// What the link points to, once read. `nil` for files.
+    var remote: RemoteMedia?
     var info: MediaInfo?
     var settings: ConversionSettings
     var state: State = .probing
@@ -46,12 +49,16 @@ final class ConversionJob: Identifiable {
         self.settings = settings
     }
 
-    var name: String { source.lastPathComponent }
+    var isDownload: Bool { !source.isFileURL }
+    var name: String {
+        if let remote { return remote.title }
+        return isDownload ? (source.host() ?? "") + source.path() : source.lastPathComponent
+    }
     var kind: MediaKind? { info?.kind }
 
     /// Output size as a share of the input, for example -0.67 for a file a third the size.
     var sizeChange: Double? {
-        guard let outputSize, let input = info?.fileSize, input > 0 else { return nil }
+        guard !isDownload, let outputSize, let input = info?.fileSize, input > 0 else { return nil }
         return Double(outputSize) / Double(input) - 1
     }
 }
