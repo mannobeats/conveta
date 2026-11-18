@@ -17,6 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: No personal information in the source
+        run: scripts/check-leaks.sh
+
       - name: Tools
         run: brew install xcodegen nasm cmake pkgconf meson ninja autoconf automake
 

@@ -24,7 +24,9 @@ DAV1D=1.5.2
 ARCHS=(${=ARCHS:-arm64 x86_64})
 MIN_OS=26.0
 JOBS=$(sysctl -n hw.ncpu)
-WORK=~/Library/Developer/Conveta/ffmpeg-build
+# FFmpeg records its build paths in the binary (-buildconf). Build where the path is the same on
+# every Mac and names no one, so a release never carries the builder's home folder.
+WORK=${CONVETA_FFMPEG_BUILD:-/Users/Shared/ConvetaFFmpegBuild}
 SRC=$WORK/src
 OUT=$PWD/Vendor/FFmpeg
 CHECKSUMS=$PWD/Vendor/FFmpeg/sources.sha256
@@ -158,6 +160,12 @@ for tool in ffmpeg ffprobe; do
   fi
 done
 lipo -info $OUT/bin/ffmpeg
+for tool in ffmpeg ffprobe; do
+  # Count rather than `grep -q`: an early exit would break the pipe and, under pipefail, read as "clean".
+  if (( $(strings -a $OUT/bin/$tool | grep -cF "$HOME" || true) > 0 )); then
+    echo "$tool contains this Mac's home folder path; it must not ship. Build with the default WORK."; exit 1
+  fi
+done
 $OUT/bin/ffmpeg -hide_banner -version | head -1
 grep -q -- "--disable-gpl" <($OUT/bin/ffmpeg -hide_banner -buildconf) || { echo "Not an LGPL build"; exit 1; }
 if $OUT/bin/ffmpeg -hide_banner -L | grep -q "GNU General Public License"; then echo "GPL build"; exit 1; fi

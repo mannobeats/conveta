@@ -1,6 +1,9 @@
 name: Release
 
 # Push a tag like v1.2.0 to publish a signed, notarized release with an update for Sparkle.
+# Secrets: APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID,
+# APPLE_PASSWORD, APPLE_TEAM_ID (scripts/setup-release-secrets.sh) and SPARKLE_PRIVATE_KEY
+# (scripts/setup-update-key.sh). See docs/RELEASING.md.
 on:
   push:
     tags: ['v*']
@@ -33,10 +36,22 @@ jobs:
         if: steps.ffmpeg.outputs.cache-hit != 'true'
         run: scripts/build-ffmpeg.sh
 
+      - name: Check the secrets are there
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          missing=""
+          [ -n "$CERTIFICATE" ] || missing="$missing APPLE_CERTIFICATE (scripts/setup-release-secrets.sh)"
+          [ -n "$APPLE_ID" ] || missing="$missing APPLE_ID (scripts/setup-release-secrets.sh)"
+          [ -n "$SPARKLE_PRIVATE_KEY" ] || missing="$missing SPARKLE_PRIVATE_KEY (scripts/setup-update-key.sh)"
+          if [ -n "$missing" ]; then echo "::error::Missing secrets:$missing"; exit 1; fi
+
       - name: Signing certificate
         env:
-          CERTIFICATE_P12: ${{ secrets.DEVELOPER_ID_CERTIFICATE_P12 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
           KEYCHAIN=$RUNNER_TEMP/signing.keychain-db
           PASSWORD=$(uuidgen)
@@ -49,20 +64,19 @@ jobs:
           security list-keychains -d user -s $KEYCHAIN $(security list-keychains -d user | tr -d '"')
           rm $RUNNER_TEMP/certificate.p12
 
-      - name: Notary and update keys
+      - name: Update key
         env:
-          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
-          echo "$NOTARY_KEY_P8" | base64 --decode > $RUNNER_TEMP/notary.p8
-          echo "$SPARKLE_PRIVATE_KEY" > $RUNNER_TEMP/sparkle.key
+          (umask 077; printf %s "$SPARKLE_PRIVATE_KEY" > $RUNNER_TEMP/sparkle.key)
           curl -fsSL https://github.com/sparkle-project/Sparkle/releases/download/2.10.1/Sparkle-2.10.1.tar.xz | tar -xJ -C $RUNNER_TEMP
 
       - name: Build, sign, notarize
         env:
-          NOTARY_KEY_PATH: ${{ runner.temp }}/notary.p8
-          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           SPARKLE_KEY_FILE: ${{ runner.temp }}/sparkle.key
           SPARKLE_BIN: ${{ runner.temp }}/bin
           BUILD_NUMBER: ${{ github.run_number }}
@@ -78,4 +92,6 @@ jobs:
 
       - name: Clean up secrets
         if: always()
-        run: rm -f $RUNNER_TEMP/notary.p8 $RUNNER_TEMP/sparkle.key
+        run: |
+          rm -f $RUNNER_TEMP/sparkle.key
+          security delete-keychain $RUNNER_TEMP/signing.keychain-db 2>/dev/null || true

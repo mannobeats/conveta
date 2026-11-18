@@ -9,26 +9,42 @@ find the update through `https://github.com/mannobeats/conveta/releases/latest/d
 git tag v1.2.0 && git push origin v1.2.0
 ```
 
-## One-time setup: repository secrets
+## One-time setup
 
-Settings → Secrets and variables → Actions:
+Two scripts give the repository what the Release workflow needs. Run them yourself, on the Mac
+with your Developer ID certificate. Passwords are typed at hidden prompts; every value goes straight
+into GitHub's encrypted secrets and nothing is printed, logged, written to disk or committed.
 
-| Secret | What it is | How to get it |
-| --- | --- | --- |
-| `DEVELOPER_ID_CERTIFICATE_P12` | Your Developer ID Application certificate with its private key, base64 | Keychain Access → My Certificates → right-click "Developer ID Application: …" → Export → `.p12`; then `base64 -i cert.p12 \| pbcopy` |
-| `DEVELOPER_ID_CERTIFICATE_PASSWORD` | The password you chose when exporting | |
-| `NOTARY_KEY_P8` | App Store Connect API key, base64 | App Store Connect → Users and Access → Integrations → App Store Connect API → Team Keys → + (Developer access) → download `AuthKey_XXXX.p8`; `base64 -i AuthKey_XXXX.p8 \| pbcopy` |
-| `NOTARY_KEY_ID` | The key's ID | Shown next to the key |
-| `NOTARY_ISSUER_ID` | Your issuer ID | Shown above the keys list |
-| `SPARKLE_PRIVATE_KEY` | The EdDSA key that signs updates | Already set. Its public half is `SUPublicEDKey` in `App/Resources/Info.plist`; the key also lives in the release Mac's login keychain (account `conveta`). Never lose it: without it, installed copies can't verify new updates. |
+```bash
+scripts/setup-release-secrets.sh                        # explains how to export the certificate
+scripts/setup-release-secrets.sh ~/Desktop/DeveloperID.p12
+scripts/setup-update-key.sh                             # only if SPARKLE_PRIVATE_KEY isn't set yet
+```
+
+| Secret | What it is |
+| --- | --- |
+| `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD` | Your Developer ID Application certificate (`.p12`, base64) and its export password |
+| `APPLE_SIGNING_IDENTITY` | The certificate's name, read from your keychain |
+| `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | Your Apple Account email, an app-specific password (account.apple.com → Sign-In and Security → App-Specific Passwords), and your team ID, read from the certificate. The script checks them with Apple before saving. |
+| `SPARKLE_PRIVATE_KEY` | The EdDSA key that signs updates. Its public half is `SUPublicEDKey` in `App/Resources/Info.plist`; the key itself stays in your login keychain (account `conveta`). Back it up: without it, installed copies can't verify new updates. |
+
+Delete the exported `.p12` afterwards; GitHub keeps its own encrypted copy.
 
 ## Releasing from a Mac instead
 
 ```bash
-xcrun notarytool store-credentials conveta   # once
-scripts/release.sh 1.2.0                     # build/release/Conveta-1.2.0.dmg and appcast.xml
+export APPLE_ID=… APPLE_TEAM_ID=…
+read -rs APPLE_PASSWORD && export APPLE_PASSWORD     # hidden, not in shell history
+scripts/release.sh 1.2.0                             # build/release/Conveta-1.2.0.dmg and appcast.xml
 gh release create v1.2.0 build/release/Conveta-1.2.0.dmg build/release/appcast.xml --generate-notes
 ```
 
 `SKIP_NOTARIZE=1 scripts/release.sh 1.2.0` runs everything except Apple's notary service, to check
 a release build without publishing.
+
+## Keeping personal information out
+
+`scripts/check-leaks.sh` fails on home folder paths, disk and computer names, local network domains
+and e-mail addresses in tracked files; CI runs it on every push, and `scripts/release.sh` runs it on
+the built app before packaging. FFmpeg is built in `/Users/Shared/ConvetaFFmpegBuild` because it
+records its build paths inside the binary.

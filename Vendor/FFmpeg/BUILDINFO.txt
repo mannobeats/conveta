@@ -4,11 +4,13 @@ Built 2026-11-18 with scripts/build-ffmpeg.sh
 
 
   configuration:
-    --prefix=/Users/mannobeats/Library/Developer/Conveta/ffmpeg-build/prefix-arm64
+    --prefix=/Users/Shared/ConvetaFFmpegBuild/prefix-arm64
     --arch=arm64
+    --target-os=darwin
+    --enable-cross-compile
     --cc=clang
-    --extra-cflags='-arch arm64 -mmacosx-version-min=26.0 -O3 -I/Users/mannobeats/Library/Developer/Conveta/ffmpeg-build/prefix-arm64/include'
-    --extra-ldflags='-arch arm64 -mmacosx-version-min=26.0 -L/Users/mannobeats/Library/Developer/Conveta/ffmpeg-build/prefix-arm64/lib'
+    --extra-cflags='-arch arm64 -mmacosx-version-min=26.0 -O3 -I/Users/Shared/ConvetaFFmpegBuild/prefix-arm64/include'
+    --extra-ldflags='-arch arm64 -mmacosx-version-min=26.0 -L/Users/Shared/ConvetaFFmpegBuild/prefix-arm64/lib'
     --extra-libs=-liconv
     --pkg-config-flags=--static
     --disable-gpl
