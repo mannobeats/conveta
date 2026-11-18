@@ -110,8 +110,8 @@ private struct Thumbnail: View {
 
     var body: some View {
         ZStack {
-            // Audio thumbnails are only a generic icon; the coloured badge says more.
-            if let image = job.thumbnail, job.kind != .audio {
+            // Audio and PDF previews say little at this size; Conveta's own artwork says more.
+            if let image = job.thumbnail, job.kind == .video || job.kind == .image {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -119,16 +119,8 @@ private struct Thumbnail: View {
                     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(.separator.opacity(0.6), lineWidth: 0.5))
                     .transition(.opacity)
-            } else if let kind = job.kind {
-                KindBadge(kind: kind)
             } else {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(.quaternary)
-                    .overlay {
-                        Image(systemName: job.state.isUnsupported ? "questionmark" : "doc")
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(width: Theme.rowThumbnail, height: Theme.rowThumbnail)
+                KindArtwork(kind: job.kind ?? (job.state.isUnsupported ? nil : MediaKind(url: job.source)))
             }
         }
         .animation(Theme.motion, value: job.thumbnail != nil)

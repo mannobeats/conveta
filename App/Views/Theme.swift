@@ -47,24 +47,6 @@ struct FormatChip: View {
     }
 }
 
-/// The square icon for a media kind, used when there is no thumbnail.
-struct KindBadge: View {
-    let kind: MediaKind
-    var size: CGFloat = Theme.rowThumbnail
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
-            .fill(Theme.gradient(for: kind))
-            .overlay {
-                Image(systemName: kind.symbolName)
-                    .font(.system(size: size * 0.42, weight: .medium))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
-    }
-}
-
 extension Int64 {
     var fileSizeText: String { ByteCountFormatter.string(fromByteCount: self, countStyle: .file) }
 }

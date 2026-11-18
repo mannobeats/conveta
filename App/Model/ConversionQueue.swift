@@ -14,7 +14,8 @@ final class ConversionQueue {
 
     let preferences: Preferences
     let access: FolderAccess
-    @ObservationIgnored private let service = ConversionService()
+    @ObservationIgnored private let tools = FFmpegTools.bundled()
+    @ObservationIgnored private lazy var service = ConversionService(tools: tools)
     @ObservationIgnored private var tasks: [ConversionJob.ID: Task<Void, Never>] = [:]
     @ObservationIgnored private var batch: [ConversionJob.ID] = []
     @ObservationIgnored var onBatchFinished: (([ConversionJob]) -> Void)?
@@ -74,7 +75,7 @@ final class ConversionQueue {
 
     private func prepare(_ job: ConversionJob, format: OutputFormat?) async {
         do {
-            let info = try await MediaProbe.probe(job.source)
+            let info = try await MediaProbe.probe(job.source, tools: tools)
             job.info = info
             var settings = preferences.settings(for: info.kind)
             if let format, info.kind.outputFormats.contains(format) { settings.format = format }
@@ -93,7 +94,7 @@ final class ConversionQueue {
                                                             options: [.skipsHiddenFiles, .skipsPackageDescendants])
             return (enumerator?.allObjects as? [URL] ?? [])
                 .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true }
-                .filter { UTType(filenameExtension: $0.pathExtension).flatMap(MediaKind.init(contentType:)) != nil }
+                .filter { MediaKind(url: $0) != nil }
                 .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         }
     }

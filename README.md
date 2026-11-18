@@ -7,14 +7,20 @@ the Mac's own hardware encoders. Drop files in, right-click them in Finder, or r
 
 | From | To |
 | --- | --- |
-| Video (MOV, MP4, M4V, AVI, MPEG-TS, 3GP…) | MP4, MOV, M4V (H.264, HEVC, ProRes 422/4444, or stream copy), animated GIF, or audio only |
-| Audio (WAV, MP3, M4A, AIFF, FLAC, CAF…) | M4A (AAC or Apple Lossless), WAV, AIFF, FLAC, Opus |
-| Images (HEIC, PNG, JPEG, WebP, TIFF, RAW, PSD, GIF…) | JPEG, PNG, HEIC, AVIF, TIFF, GIF, BMP, PDF |
+| Video (MOV, MP4, MKV, WebM, AVI, WMV, FLV, MPEG-TS, 3GP, VP9, AV1…) | MP4, MOV, M4V, MKV (H.264, HEVC, ProRes, or stream copy), WebM (VP9), AVI, animated GIF, or audio only |
+| Audio (MP3, WAV, M4A, AAC, FLAC, Ogg, Opus, WMA, AIFF, APE, AMR…) | MP3, M4A (AAC or Apple Lossless), AAC, WAV, AIFF, FLAC, Ogg Vorbis, Opus, WMA |
+| Images (HEIC, PNG, JPEG, WebP, AVIF, TIFF, RAW, PSD, GIF…) | JPEG, PNG, HEIC, AVIF, WebP (still or animated), TIFF, GIF, BMP, PDF |
 | PDF | One image per page (PNG, JPEG, HEIC, TIFF) |
 
-Everything runs on Apple frameworks (AVFoundation, VideoToolbox, Core Audio, ImageIO), so the app
-is small, sandboxed, fast on Apple silicon, and has no GPL dependencies. Opus is written as
-standard Ogg Opus by a small muxer in `ConvetaKit`.
+Two engines, picked per file:
+
+- **Apple frameworks** (AVFoundation, VideoToolbox, Core Audio, ImageIO) whenever they can read the
+  source and write the format: fastest, hardware accelerated. Opus is written as standard Ogg Opus
+  by a small muxer in `ConvetaKit`.
+- **A bundled FFmpeg helper** for everything else (MP3, MKV, WebM, Ogg, WMA, WebP, and sources such as
+  MKV or WMA). It is an LGPL-only build — no `--enable-gpl`, no x264 — with LAME, Opus, Vorbis, libvpx,
+  libwebp and dav1d, linked statically, signed to run inside the app's sandbox. H.264 and HEVC still
+  go through VideoToolbox. Lossy audio is never re-encoded above the source's bitrate.
 
 ## Ways in
 
@@ -29,9 +35,13 @@ standard Ogg Opus by a small muxer in `ConvetaKit`.
 Requires Xcode 26+, macOS 26+, and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
+scripts/build-ffmpeg.sh   # once: builds the LGPL FFmpeg helper into Vendor/FFmpeg (pinned, checksummed)
 scripts/build.sh --open   # generate the project, build with zero warnings, install to ~/Applications, launch
 scripts/test.sh           # ConvetaKit tests + the app's sandboxed self-test (Conveta --selftest)
 ```
+
+FFmpeg is licensed under the LGPL 2.1 or later; `Vendor/FFmpeg/BUILDINFO.txt` records the exact
+configuration and `scripts/build-ffmpeg.sh` rebuilds it from source.
 
 ## Layout
 

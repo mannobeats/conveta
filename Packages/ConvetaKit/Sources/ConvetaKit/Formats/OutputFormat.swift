@@ -1,25 +1,25 @@
 import UniformTypeIdentifiers
 
-/// A file format Conveta writes. Each one is produced by Apple's own frameworks,
-/// so conversions are hardware accelerated where the Mac allows it.
+/// A file format Conveta writes. Most are produced by Apple's own frameworks (hardware
+/// accelerated where the Mac allows it); the rest by the bundled LGPL FFmpeg helper, see `isNative`.
 public enum OutputFormat: String, Codable, Sendable, CaseIterable, Identifiable {
     // Video
-    case mp4, mov, m4v
+    case mp4, mov, m4v, mkv, webm, avi
     // Animated image
     case gif
     // Audio
-    case m4a, wav, aiff, flac, opus
+    case mp3, m4a, aac, wav, aiff, flac, ogg, opus, wma
     // Still image
-    case jpeg, png, heic, avif, tiff, bmp, pdf
+    case jpeg, png, heic, avif, webp, tiff, bmp, pdf
 
     public var id: String { rawValue }
 
     /// The family of the file this format produces.
     public var kind: MediaKind {
         switch self {
-        case .mp4, .mov, .m4v: .video
-        case .m4a, .wav, .aiff, .flac, .opus: .audio
-        case .gif, .jpeg, .png, .heic, .avif, .tiff, .bmp: .image
+        case .mp4, .mov, .m4v, .mkv, .webm, .avi: .video
+        case .mp3, .m4a, .aac, .wav, .aiff, .flac, .ogg, .opus, .wma: .audio
+        case .gif, .jpeg, .png, .heic, .avif, .webp, .tiff, .bmp: .image
         case .pdf: .document
         }
     }
@@ -29,7 +29,15 @@ public enum OutputFormat: String, Codable, Sendable, CaseIterable, Identifiable 
         case .mp4: "MP4"
         case .mov: "MOV"
         case .m4v: "M4V"
+        case .mkv: "MKV"
+        case .webm: "WebM"
+        case .avi: "AVI"
         case .gif: "GIF"
+        case .mp3: "MP3"
+        case .aac: "AAC"
+        case .ogg: "Ogg"
+        case .wma: "WMA"
+        case .webp: "WebP"
         case .m4a: "M4A"
         case .wav: "WAV"
         case .aiff: "AIFF"
@@ -51,7 +59,15 @@ public enum OutputFormat: String, Codable, Sendable, CaseIterable, Identifiable 
         case .mp4: "Plays everywhere"
         case .mov: "Apple and editing apps"
         case .m4v: "Apple TV and iTunes"
+        case .mkv: "Flexible, keeps every track"
+        case .webm: "Open video for the web"
+        case .avi: "Older players and devices"
         case .gif: "Short looping animation"
+        case .mp3: "Plays on everything"
+        case .aac: "Raw AAC stream"
+        case .ogg: "Open, Vorbis audio"
+        case .wma: "Windows Media players"
+        case .webp: "Small images for the web"
         case .m4a: "Small, great quality"
         case .wav: "Uncompressed, universal"
         case .aiff: "Uncompressed, Apple"
@@ -80,7 +96,15 @@ public enum OutputFormat: String, Codable, Sendable, CaseIterable, Identifiable 
         case .mp4: .mpeg4Movie
         case .mov: .quickTimeMovie
         case .m4v: UTType("com.apple.m4v-video") ?? .mpeg4Movie
+        case .mkv: UTType(filenameExtension: "mkv") ?? .movie
+        case .webm: UTType(filenameExtension: "webm") ?? .movie
+        case .avi: .avi
         case .gif: .gif
+        case .mp3: .mp3
+        case .aac: UTType(filenameExtension: "aac") ?? .audio
+        case .ogg: UTType(filenameExtension: "ogg") ?? .audio
+        case .wma: UTType(filenameExtension: "wma") ?? .audio
+        case .webp: .webP
         case .m4a: .mpeg4Audio
         case .wav: .wav
         case .aiff: .aiff
@@ -99,7 +123,8 @@ public enum OutputFormat: String, Codable, Sendable, CaseIterable, Identifiable 
     /// Whether the encoder discards information. Lossy formats expose a quality setting.
     public var isLossy: Bool {
         switch self {
-        case .jpeg, .heic, .avif, .m4a, .opus, .mp4, .mov, .m4v, .gif: true
+        case .jpeg, .heic, .avif, .webp, .m4a, .opus, .mp3, .aac, .ogg, .wma,
+             .mp4, .mov, .m4v, .mkv, .webm, .avi, .gif: true
         case .png, .tiff, .bmp, .pdf, .wav, .aiff, .flac: false
         }
     }
@@ -107,7 +132,7 @@ public enum OutputFormat: String, Codable, Sendable, CaseIterable, Identifiable 
     /// Whether the format can store an alpha channel.
     public var supportsTransparency: Bool {
         switch self {
-        case .png, .heic, .avif, .tiff, .gif, .pdf: true
+        case .png, .heic, .avif, .webp, .tiff, .gif, .pdf: true
         default: false
         }
     }
@@ -116,8 +141,17 @@ public enum OutputFormat: String, Codable, Sendable, CaseIterable, Identifiable 
     public var videoCodecs: [VideoCodec] {
         switch self {
         case .mov: [.h264, .hevc, .proRes422, .proRes4444, .passthrough]
+        case .mkv: [.h264, .hevc, .proRes422, .passthrough]
         case .mp4, .m4v: [.h264, .hevc, .passthrough]
-        default: []
+        default: []  // WebM is always VP9, AVI always MPEG-4 Part 2
+        }
+    }
+
+    /// Formats Apple's frameworks write. The rest are written by the bundled FFmpeg helper.
+    public var isNative: Bool {
+        switch self {
+        case .mkv, .webm, .avi, .mp3, .aac, .ogg, .wma, .webp: false
+        default: true
         }
     }
 }

@@ -85,17 +85,33 @@ private final class Runner {
         queue.clearFinished()
         check("clear finished empties the list", queue.jobs.isEmpty, "\(queue.jobs.map(\.name))")
 
+        // The bundled FFmpeg helper runs inside the sandbox: MP3 and WebP out.
+        check("FFmpeg helper bundled", FFmpegTools.bundled() != nil)
+        queue.add([wav, png])
+        try await waitUntil("files read again") { queue.jobs.count == 2 && !queue.jobs.contains { $0.state == .probing } }
+        queue.updateSettings(kind: .audio) { $0.format = .mp3 }
+        queue.updateSettings(kind: .image) { $0.format = .webp }
+        queue.convertSelectionOrAll()
+        try await waitUntil("FFmpeg batch finishes", seconds: 30) { !queue.isRunning }
+        let failures = queue.jobs.compactMap { if case .failed(let reason) = $0.state { reason } else { nil } }
+        check("MP3 and WebP converted in the sandbox", queue.jobs.allSatisfy { $0.state == .done }, failures.joined(separator: "; "))
+        check("MP3 written", FileManager.default.fileExists(atPath: folder.appending(path: "Tone.mp3").path))
+        check("WebP written", FileManager.default.fileExists(atPath: folder.appending(path: "Photo.webp").path))
+        queue.clearFinished()
+
         // Cancelling stops a running job and leaves no file.
         let longTone = try writeTone("Long.wav", seconds: 600)
         queue.add([longTone])
         try await waitUntil("long file read") { queue.jobs.first?.state == .ready }
-        queue.updateSettings { $0.format = .flac }
+        queue.updateSettings { $0.format = .mp3 }
         queue.convertSelectionOrAll()
         try await waitUntil("conversion starts") { queue.jobs.first?.state == .converting }
         queue.cancelAll()
         try await waitUntil("cancel lands") { !queue.isRunning }
         check("cancelled state", queue.jobs.first?.state == .cancelled, "\(String(describing: queue.jobs.first?.state))")
-        check("no partial output", !FileManager.default.fileExists(atPath: folder.appending(path: "Long.flac").path))
+        check("no partial output", !FileManager.default.fileExists(atPath: folder.appending(path: "Long.mp3").path))
+        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.filter { $0.hasPrefix(".conveta-") } ?? []
+        check("no working folders after cancel", leftovers.isEmpty, "\(leftovers)")
 
         // Hand-offs from Finder go through the shared app group.
         let request = HandoffRequest(paths: [png.path], format: .heic)

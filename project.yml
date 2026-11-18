@@ -47,6 +47,17 @@ targets:
       - target: ConvetaFinder
         embed: true
         codeSign: true
+    postCompileScripts:
+      - name: Embed FFmpeg helper
+        script: "\"$SRCROOT/scripts/embed-ffmpeg.sh\""
+        inputFiles:
+          - $(SRCROOT)/Vendor/FFmpeg/bin/ffmpeg
+          - $(SRCROOT)/Vendor/FFmpeg/bin/ffprobe
+          - $(SRCROOT)/App/Resources/Helper.entitlements
+          - $(SRCROOT)/scripts/embed-ffmpeg.sh
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/ffmpeg
+          - $(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/ffprobe
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.1804audio.Conveta
@@ -56,6 +67,8 @@ targets:
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         SWIFT_APPROACHABLE_CONCURRENCY: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # The embed phase signs the FFmpeg helper in place; codesign needs to write beside it.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         ENABLE_APP_SANDBOX: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
     scheme:

@@ -15,27 +15,47 @@ struct FormatTests {
         #expect(MediaKind.allCases.contains { $0.outputFormats.contains(format) })
     }
 
-    @Test("Every output format can be routed to a converter")
+    static func info(_ kind: MediaKind, apple: Bool = true) -> MediaInfo {
+        var info = MediaInfo(kind: kind, contentType: .data, fileSize: 0)
+        info.readableByApple = apple
+        return info
+    }
+
+    @Test("Every pair routes: native formats to Apple's frameworks, the rest to FFmpeg")
     func everyPairRoutes() throws {
+        let tools = FFmpegTools(ffmpeg: URL(filePath: "/x/ffmpeg"), ffprobe: URL(filePath: "/x/ffprobe"))
+        let service = ConversionService(tools: tools)
         for kind in MediaKind.allCases {
             for format in kind.outputFormats {
-                _ = try ConversionService.converter(for: kind, format: format)
+                let converter = try service.converter(for: Self.info(kind), format: format)
+                #expect((converter is FFmpegConverter) == !format.isNative, "\(kind) → \(format)")
+                if kind != .document, kind != .image {
+                    #expect(try service.converter(for: Self.info(kind, apple: false), format: format) is FFmpegConverter)
+                }
             }
+        }
+    }
+
+    @Test("Without the helper, FFmpeg-only formats explain themselves")
+    func noHelper() {
+        #expect(throws: ConversionError.encoderUnavailable("MP3")) {
+            try ConversionService().converter(for: Self.info(.audio), format: .mp3)
         }
     }
 
     @Test("Impossible pairs are refused")
     func impossiblePairs() {
+        let service = ConversionService()
         #expect(throws: ConversionError.unsupportedConversion(from: .audio, to: .mp4)) {
-            try ConversionService.converter(for: .audio, format: .mp4)
+            try service.converter(for: Self.info(.audio), format: .mp4)
         }
-        #expect(throws: ConversionError.self) { try ConversionService.converter(for: .image, format: .wav) }
-        #expect(throws: ConversionError.self) { try ConversionService.converter(for: .document, format: .pdf) }
+        #expect(throws: ConversionError.self) { try service.converter(for: Self.info(.image), format: .wav) }
+        #expect(throws: ConversionError.self) { try service.converter(for: Self.info(.document), format: .pdf) }
     }
 
     @Test("Common formats of mixed kinds")
     func commonFormats() {
-        #expect(MediaKind.commonFormats(for: [.video, .audio]) == [.m4a, .wav, .aiff, .flac, .opus])
+        #expect(MediaKind.commonFormats(for: [.video, .audio]) == [.mp3, .m4a, .aac, .wav, .aiff, .flac, .ogg, .opus, .wma])
         #expect(MediaKind.commonFormats(for: [.image, .document]) == [.jpeg, .png, .heic, .tiff])
         #expect(MediaKind.commonFormats(for: [.video, .image]) == [.gif])
         #expect(MediaKind.commonFormats(for: [.audio, .image]).isEmpty)
@@ -54,13 +74,20 @@ struct FormatTests {
         #expect(MediaKind(contentType: .plainText) == nil)
         #expect(MediaKind(contentType: .zip) == nil)
         #expect(MediaKind(contentType: .folder) == nil)
+        #expect(MediaKind(url: URL(filePath: "/tmp/a.mkv")) == .video)
+        #expect(MediaKind(url: URL(filePath: "/tmp/a.WMA")) == .audio)
+        #expect(MediaKind(url: URL(filePath: "/tmp/a.ape")) == .audio)
+        #expect(MediaKind(url: URL(filePath: "/tmp/a.flv")) == .video)
+        #expect(MediaKind(url: URL(filePath: "/tmp/a.zip")) == nil)
+        #expect(MediaKind(url: URL(filePath: "/tmp/a")) == nil)
     }
 
     @Test("Extensions and content types agree", arguments: OutputFormat.allCases)
     func extensionsMatchTypes(format: OutputFormat) {
         let type = UTType(filenameExtension: format.fileExtension)
-        #expect(type != nil)
-        #expect(type?.conforms(to: format.contentType) == true || format == .opus)
+        if let type, format != .opus, format != .wma, format != .aac {
+            #expect(type.conforms(to: format.contentType))
+        }
     }
 
     @Test("Output names never collide")

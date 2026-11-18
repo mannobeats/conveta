@@ -5,7 +5,8 @@ import Foundation
 /// The formats as Shortcuts shows them. App Intents needs these as literals in the app target,
 /// so they mirror ``OutputFormat`` case for case (checked by the self-test).
 enum IntentFormat: String, AppEnum {
-    case mp4, mov, m4v, gif, m4a, wav, aiff, flac, opus, jpeg, png, heic, avif, tiff, bmp, pdf
+    case mp4, mov, m4v, mkv, webm, avi, gif, mp3, m4a, aac, wav, aiff, flac, ogg, opus, wma
+    case jpeg, png, heic, avif, webp, tiff, bmp, pdf
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Format"
 
@@ -13,7 +14,15 @@ enum IntentFormat: String, AppEnum {
         .mp4: DisplayRepresentation(title: "MP4", subtitle: "Video that plays everywhere"),
         .mov: DisplayRepresentation(title: "MOV", subtitle: "Video for Apple and editing apps"),
         .m4v: DisplayRepresentation(title: "M4V", subtitle: "Video for Apple TV"),
+        .mkv: DisplayRepresentation(title: "MKV", subtitle: "Flexible video, keeps every track"),
+        .webm: DisplayRepresentation(title: "WebM", subtitle: "Open video for the web"),
+        .avi: DisplayRepresentation(title: "AVI", subtitle: "Video for older players"),
         .gif: DisplayRepresentation(title: "GIF", subtitle: "Short looping animation"),
+        .mp3: DisplayRepresentation(title: "MP3", subtitle: "Audio that plays on everything"),
+        .aac: DisplayRepresentation(title: "AAC", subtitle: "Raw AAC audio"),
+        .ogg: DisplayRepresentation(title: "Ogg", subtitle: "Open Vorbis audio"),
+        .wma: DisplayRepresentation(title: "WMA", subtitle: "Windows Media audio"),
+        .webp: DisplayRepresentation(title: "WebP", subtitle: "Small images for the web"),
         .m4a: DisplayRepresentation(title: "M4A", subtitle: "Small audio, great quality"),
         .wav: DisplayRepresentation(title: "WAV", subtitle: "Uncompressed audio"),
         .aiff: DisplayRepresentation(title: "AIFF", subtitle: "Uncompressed audio, Apple"),

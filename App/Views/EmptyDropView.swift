@@ -69,7 +69,7 @@ private struct KindCluster: View {
         ZStack {
             ForEach(Array(kinds.enumerated()), id: \.element) { index, kind in
                 let offset = CGFloat(index) - 1.5
-                KindBadge(kind: kind, size: 58)
+                KindArtwork(kind: kind, size: 58)
                     .shadow(color: Theme.color(for: kind).opacity(0.35), radius: 10, y: 5)
                     .rotationEffect(.degrees(Double(offset) * (isTargeted ? 12 : 8)))
                     .offset(x: offset * (isTargeted ? 52 : 40), y: abs(offset) * (isTargeted ? 10 : 6) - (isTargeted && !reduceMotion ? 6 : 0))

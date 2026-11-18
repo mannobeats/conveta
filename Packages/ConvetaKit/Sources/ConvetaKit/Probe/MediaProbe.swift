@@ -14,9 +14,13 @@ public struct MediaInfo: Sendable, Hashable {
     public var codec: String?
     public var sampleRate: Double?
     public var channels: Int?
+    /// Audio data rate of the source in kbit/s, when known.
+    public var audioBitrate: Int?
     public var hasAudio = false
     public var frameCount = 1
     public var pageCount: Int?
+    /// Whether AVFoundation or ImageIO read the file. When `false`, only FFmpeg can convert it.
+    public var readableByApple = true
 
     /// A compact line such as "1920×1080 · 0:42 · H.264".
     public var details: String {
@@ -28,6 +32,16 @@ public struct MediaInfo: Sendable, Hashable {
         if let pageCount { parts.append(pageCount == 1 ? "1 page" : "\(pageCount) pages") }
         if kind == .image, frameCount > 1 { parts.append("\(frameCount) frames") }
         return parts.joined(separator: " · ")
+    }
+
+    /// The data rate to encode lossy audio at: the request, but never above what the source has,
+    /// since re-encoding at a higher rate only makes the file bigger. Lossless sources keep the request.
+    public func effectiveAudioBitrate(_ requested: Int) -> Int {
+        let lossless = ["PCM", "FLAC", "Apple Lossless", "APE", "WavPack", "TrueHD"].contains(codec ?? "")
+        guard let audioBitrate, audioBitrate > 0, !lossless || kind == .video else { return requested }
+        let ladder = AudioOptions.bitrates
+        let cap = ladder.first { $0 >= audioBitrate } ?? ladder.last!
+        return min(requested, max(cap, ladder.first!))
     }
 
     public static func formatDuration(_ seconds: Double) -> String {
@@ -51,17 +65,23 @@ public enum ProbeError: LocalizedError, Equatable {
 
 /// Reads a file's kind and properties without decoding it.
 public enum MediaProbe {
-    public static func probe(_ url: URL) async throws -> MediaInfo {
+    /// Reads a file with Apple's frameworks, then with `ffprobe` (when `tools` is given) for what they can't open.
+    public static func probe(_ url: URL, tools: FFmpegTools? = nil) async throws -> MediaInfo {
         let values = try? url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey])
         let type = values?.contentType ?? UTType(filenameExtension: url.pathExtension) ?? .data
         let size = Int64(values?.fileSize ?? 0)
-        guard let kind = MediaKind(contentType: type) else {
+        guard let kind = MediaKind(url: url) else {
             throw ProbeError.unsupportedType(url.pathExtension.lowercased())
         }
-        switch kind {
-        case .image: return try probeImage(url, type: type, size: size)
-        case .document: return try probeDocument(url, type: type, size: size)
-        case .video, .audio: return try await probeAudiovisual(url, type: type, size: size)
+        do {
+            switch kind {
+            case .image: return try probeImage(url, type: type, size: size)
+            case .document: return try probeDocument(url, type: type, size: size)
+            case .video, .audio: return try await probeAudiovisual(url, type: type, size: size)
+            }
+        } catch {
+            guard let tools, kind == .video || kind == .audio else { throw error }
+            return try await FFprobe.probe(url, tools: tools, type: type, size: size)
         }
     }
 
@@ -108,6 +128,10 @@ public enum MediaProbe {
         info.duration = duration.isFinite ? duration : nil
         info.hasAudio = !audioTracks.isEmpty
 
+        if let audio = audioTracks.first, !videoTracks.isEmpty {
+            let rate = try await audio.load(.estimatedDataRate)
+            if rate > 0 { info.audioBitrate = Int((rate / 1000).rounded()) }
+        }
         if let track = videoTracks.first {
             let (natural, transform, fps, formats) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate, .formatDescriptions)
             let shown = natural.applying(transform)
@@ -116,6 +140,8 @@ public enum MediaProbe {
             info.codec = formats.first.map { codecName(CMFormatDescriptionGetMediaSubType($0)) }
         } else if let track = audioTracks.first {
             let formats = try await track.load(.formatDescriptions)
+            let rate = try await track.load(.estimatedDataRate)
+            if rate > 0 { info.audioBitrate = Int((rate / 1000).rounded()) }
             if let format = formats.first {
                 info.codec = codecName(CMFormatDescriptionGetMediaSubType(format))
                 if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee {

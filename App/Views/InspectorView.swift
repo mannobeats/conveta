@@ -68,7 +68,7 @@ private struct KindSettings: View {
                 Label {
                     Text(title)
                 } icon: {
-                    KindBadge(kind: kind, size: 16)
+                    KindArtwork(kind: kind, size: 16)
                 }
                 .font(.headline)
                 .foregroundStyle(.primary)
@@ -116,7 +116,7 @@ private struct InspectorHeader: View {
     var body: some View {
         HStack(spacing: 10) {
             HStack(spacing: -8) {
-                ForEach(kinds) { KindBadge(kind: $0, size: 26) }
+                ForEach(kinds) { KindArtwork(kind: $0, size: 26) }
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(state.queue.selection.isEmpty ? "All Waiting Files" : "\(targets.count == 1 ? targets[0].name : "\(targets.count) Files")")

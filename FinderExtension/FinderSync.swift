@@ -74,6 +74,6 @@ final class FinderSync: FIFinderSync {
 
     static func kind(of url: URL) -> MediaKind? {
         if url.hasDirectoryPath { return nil }
-        return UTType(filenameExtension: url.pathExtension).flatMap(MediaKind.init(contentType:))
+        return MediaKind(url: url)
     }
 }

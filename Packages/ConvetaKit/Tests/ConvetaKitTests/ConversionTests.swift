@@ -7,10 +7,10 @@ import UniformTypeIdentifiers
 /// End-to-end conversions on real files produced by ``Fixtures``.
 @Suite("Conversions", .serialized)
 struct ConversionTests {
-    let service = ConversionService()
+    let service = ConversionService(tools: testTools)
 
     private func run(_ source: URL, _ settings: ConversionSettings, in fixtures: Fixtures) async throws -> URL {
-        let info = try await MediaProbe.probe(source)
+        let info = try await MediaProbe.probe(source, tools: testTools)
         let out = fixtures.folder.appending(path: "out", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         let result = try await service.convert(source, info: info, settings: settings, into: out)
@@ -28,7 +28,10 @@ struct ConversionTests {
         let source = try fixtures.writeImage("Photo.png", type: .png, alpha: true)
         let output = try await run(source, ConversionSettings(format: format), in: fixtures)
         #expect(output.lastPathComponent == "Photo.\(format.fileExtension)")
-        if format == .pdf {
+        if format == .webp {
+            #expect(Inspect.imageType(output) == "org.webmproject.webp")
+            #expect(Inspect.imageSize(output) == CGSize(width: 300, height: 200))
+        } else if format == .pdf {
             let document = try #require(CGPDFDocument(output as CFURL))
             #expect(document.numberOfPages == 1)
             #expect(document.page(at: 1)?.getBoxRect(.mediaBox).size == CGSize(width: 300, height: 200))
@@ -152,7 +155,7 @@ struct ConversionTests {
         let source = try fixtures.writeTone("Tone.wav", seconds: 1.5)
         let output = try await run(source, ConversionSettings(format: format), in: fixtures)
         #expect(output.pathExtension == format.fileExtension)
-        let info = try await MediaProbe.probe(output)
+        let info = try await MediaProbe.probe(output, tools: testTools)
         #expect(info.kind == .audio)
         #expect(abs((info.duration ?? 0) - 1.5) < 0.1)
         #expect(info.channels == 2)

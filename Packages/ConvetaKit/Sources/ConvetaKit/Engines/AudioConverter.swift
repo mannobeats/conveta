@@ -11,9 +11,11 @@ struct AudioConverter: Converter {
         let formats = try await track.load(.formatDescriptions)
         let source = formats.first.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee }
 
+        var options = request.settings.audio
+        options.bitrate = request.info.effectiveAudioBitrate(options.bitrate)
         let plan = try AudioPlan(
             format: request.settings.format,
-            options: request.settings.audio,
+            options: options,
             sourceRate: source?.mSampleRate ?? 48_000,
             sourceChannels: Int(source?.mChannelsPerFrame ?? 2)
         )

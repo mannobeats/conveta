@@ -6,3 +6,4 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 .samples/
+Vendor/FFmpeg/bin/

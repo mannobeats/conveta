@@ -1,0 +1,35 @@
+FFmpeg 9.0.2, LGPL 2.1 or later, static, arm64, macOS 26.0+
+LAME 3.100 (LGPL), Opus 1.5.2, libogg 1.3.5, libvorbis 1.3.7, libvpx 1.15.2, libwebp 1.6.0, dav1d 1.5.2 (BSD)
+Built 2026-11-18 with scripts/build-ffmpeg.sh
+
+
+  configuration:
+    --prefix=/Users/mannobeats/Library/Developer/Conveta/ffmpeg-build/prefix-arm64
+    --arch=arm64
+    --cc=clang
+    --extra-cflags='-arch arm64 -mmacosx-version-min=26.0 -O3 -I/Users/mannobeats/Library/Developer/Conveta/ffmpeg-build/prefix-arm64/include'
+    --extra-ldflags='-arch arm64 -mmacosx-version-min=26.0 -L/Users/mannobeats/Library/Developer/Conveta/ffmpeg-build/prefix-arm64/lib'
+    --extra-libs=-liconv
+    --pkg-config-flags=--static
+    --disable-gpl
+    --disable-nonfree
+    --disable-autodetect
+    --enable-static
+    --disable-shared
+    --disable-doc
+    --disable-ffplay
+    --disable-network
+    --disable-debug
+    --enable-videotoolbox
+    --enable-audiotoolbox
+    --enable-zlib
+    --enable-bzlib
+    --enable-iconv
+    --enable-libmp3lame
+    --enable-libopus
+    --enable-libvorbis
+    --enable-libvpx
+    --enable-libwebp
+    --enable-libdav1d
+
+Exiting with exit code 0

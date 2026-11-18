@@ -4,7 +4,12 @@ import Foundation
 /// folder next to the final location, and moves the result into place only when it is complete.
 /// A failed or cancelled job never leaves a half-written file behind, and nothing is overwritten.
 public struct ConversionService: Sendable {
-    public init() {}
+    /// The FFmpeg helper for formats Apple's frameworks can't handle; `nil` limits Conveta to native formats.
+    public let tools: FFmpegTools?
+
+    public init(tools: FFmpegTools? = nil) {
+        self.tools = tools
+    }
 
     /// Converts `source` into `directory`, returning the URL of the file or folder written.
     public func convert(
@@ -14,7 +19,7 @@ public struct ConversionService: Sendable {
         into directory: URL,
         progress: @escaping ProgressHandler = { _ in }
     ) async throws -> URL {
-        let converter = try Self.converter(for: info.kind, format: settings.format)
+        let converter = try converter(for: info, format: settings.format)
         // Each job works in its own hidden folder beside the destination: same volume, so the final
         // move is instant, and any helper files an encoder makes are removed with the folder.
         let workspace = directory.appending(path: ".conveta-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -41,15 +46,24 @@ public struct ConversionService: Sendable {
         kind.outputFormats.contains(format)
     }
 
-    static func converter(for kind: MediaKind, format: OutputFormat) throws -> any Converter {
-        guard canConvert(kind, to: format) else { throw ConversionError.unsupportedConversion(from: kind, to: format) }
-        switch (kind, format.kind) {
+    /// Apple's frameworks when they can read the source and write the format; FFmpeg otherwise.
+    func converter(for info: MediaInfo, format: OutputFormat) throws -> any Converter {
+        if let native = try Self.nativeConverter(for: info, format: format) { return native }
+        guard let tools else { throw ConversionError.encoderUnavailable(format.displayName) }
+        return FFmpegConverter(tools: tools)
+    }
+
+    /// The Apple-framework converter for this pair, or `nil` when it needs FFmpeg.
+    static func nativeConverter(for info: MediaInfo, format: OutputFormat) throws -> (any Converter)? {
+        guard canConvert(info.kind, to: format) else { throw ConversionError.unsupportedConversion(from: info.kind, to: format) }
+        guard info.readableByApple, format.isNative else { return nil }
+        switch (info.kind, format.kind) {
         case (.document, _): return PDFPageConverter()
         case (.image, _): return ImageConverter()
         case (.video, .video): return VideoConverter()
         case (.video, .image): return AnimatedGIFConverter()
         case (.video, .audio), (.audio, .audio): return AudioConverter()
-        default: throw ConversionError.unsupportedConversion(from: kind, to: format)
+        default: throw ConversionError.unsupportedConversion(from: info.kind, to: format)
         }
     }
 }

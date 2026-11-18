@@ -14,12 +14,16 @@ struct VideoSection: View {
     let update: SettingsUpdate
 
     var body: some View {
-        let codec = current.format.videoCodecs.contains(current.video.codec) ? current.video.codec : .h264
+        let codecs = current.format.videoCodecs
+        // WebM and AVI each have one codec, so there is nothing to choose.
+        let codec = codecs.isEmpty ? .h264 : (codecs.contains(current.video.codec) ? current.video.codec : .h264)
         Section {
-            Picker("Codec", selection: bind(current, \.video.codec, update)) {
-                ForEach(current.format.videoCodecs) { Text($0.displayName).tag($0) }
+            if !codecs.isEmpty {
+                Picker("Codec", selection: bind(current, \.video.codec, update)) {
+                    ForEach(codecs) { Text($0.displayName).tag($0) }
+                }
+                .help(codec.summary)
             }
-            .help(codec.summary)
             if codec.usesQuality {
                 Picker("Quality", selection: bind(current, \.video.quality, update)) {
                     ForEach(Quality.allCases) { Text($0.displayName).tag($0) }
@@ -37,10 +41,21 @@ struct VideoSection: View {
         } header: {
             Text("Video Options")
         } footer: {
-            Text(codec == .passthrough
-                 ? "Copies the video without re-encoding: instant and lossless, but size and frame rate stay as they are. Falls back to H.264 when the codec doesn’t fit this format."
-                 : "\(codec.summary). Encoded with the Mac’s media engine. Never upscales.")
+            Text(footer(codec: codec))
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+extension VideoSection {
+    private func footer(codec: VideoCodec) -> String {
+        switch current.format {
+        case .webm: return "VP9 video with Opus sound, for browsers and the web. Never upscales."
+        case .avi: return "MPEG-4 video with MP3 sound, for older players and TVs. Never upscales."
+        default:
+            return codec == .passthrough
+                ? "Copies the video without re-encoding: instant and lossless, but size and frame rate stay as they are. Falls back to H.264 when the codec doesn’t fit this format."
+                : "\(codec.summary). Encoded with the Mac’s media engine. Never upscales."
         }
     }
 }
@@ -52,7 +67,7 @@ struct AudioSection: View {
     var body: some View {
         let format = current.format
         let lossless = format == .wav || format == .aiff || format == .flac || (format == .m4a && current.audio.codec == .alac)
-        let compressed = format == .opus || (format == .m4a && current.audio.codec == .aac)
+        let compressed = [.opus, .mp3, .aac, .ogg, .wma].contains(format) || (format == .m4a && current.audio.codec == .aac)
         Section {
             if format == .m4a {
                 Picker("Codec", selection: bind(current, \.audio.codec, update)) {
@@ -80,15 +95,21 @@ struct AudioSection: View {
         } header: {
             Text("Audio Options")
         } footer: {
-            Text(footer(lossless: lossless))
+            Text(compressed ? footer(lossless: lossless) + " Never encodes above the original’s bitrate." : footer(lossless: lossless))
                 .foregroundStyle(.secondary)
         }
     }
 
     private func footer(lossless: Bool) -> String {
-        if current.format == .opus { return "Opus always plays at 48 kHz. 96–128 kbit/s is transparent for most music." }
-        if lossless { return "Lossless: every sample is kept. Surround sound is mixed down to stereo." }
-        return "256 kbit/s AAC is what Apple Music uses. AAC tops out at 48 kHz."
+        switch current.format {
+        case .opus: return "Opus always plays at 48 kHz. 96–128 kbit/s is transparent for most music."
+        case .mp3: return "320 kbit/s is the best MP3 can do; 192 kbit/s suits most listening."
+        case .ogg: return "Vorbis in an Ogg file, common in games and Linux apps."
+        case .wma: return "Windows Media Audio, up to 192 kbit/s, for older Windows players."
+        default:
+            if lossless { return "Lossless: every sample is kept. Converting from MP3 or AAC can’t restore detail, and files get much larger." }
+            return "256 kbit/s AAC is what Apple Music uses. AAC tops out at 48 kHz."
+        }
     }
 }
 
