@@ -1,72 +1,87 @@
+<div align="center">
+
 # Conveta
 
-A native Mac app that converts video, audio, images and PDFs — one file or a thousand — using
-the Mac's own hardware encoders, and downloads videos from YouTube, Instagram, TikTok and other sites.
-Drop files in, paste a link, right-click files in Finder, or run it from Shortcuts.
+**Convert anything. Download from anywhere. Native on the Mac.**
 
-Conveta is distributed directly (Developer ID, notarized), not through the Mac App Store, whose
-rules don't allow downloading from third-party sites.
+Video, audio, images and PDFs, one file or a thousand, plus downloads from YouTube, Instagram,
+TikTok and over a thousand other sites. Free and open source.
 
-## What it converts
+[Download for macOS](https://github.com/mannobeats/conveta/releases/latest) · macOS 26 or later · Apple silicon and Intel
 
-| From | To |
-| --- | --- |
-| Video (MOV, MP4, MKV, WebM, AVI, WMV, FLV, MPEG-TS, 3GP, VP9, AV1…) | MP4, MOV, M4V, MKV (H.264, HEVC, ProRes, or stream copy), WebM (VP9), AVI, animated GIF, or audio only |
-| Audio (MP3, WAV, M4A, AAC, FLAC, Ogg, Opus, WMA, AIFF, APE, AMR…) | MP3, M4A (AAC or Apple Lossless), AAC, WAV, AIFF, FLAC, Ogg Vorbis, Opus, WMA |
-| Images (HEIC, PNG, JPEG, WebP, AVIF, TIFF, RAW, PSD, GIF…) | JPEG, PNG, HEIC, AVIF, WebP (still or animated), TIFF, GIF, BMP, PDF |
-| PDF | One image per page (PNG, JPEG, HEIC, TIFF) |
+</div>
 
-Two engines, picked per file:
+## What it does
 
-- **Apple frameworks** (AVFoundation, VideoToolbox, Core Audio, ImageIO) whenever they can read the
-  source and write the format: fastest, hardware accelerated. Opus is written as standard Ogg Opus
-  by a small muxer in `ConvetaKit`.
-- **A bundled FFmpeg helper** for everything else (MP3, MKV, WebM, Ogg, WMA, WebP, and sources such as
-  MKV or WMA). It is an LGPL-only build — no `--enable-gpl`, no x264 — with LAME, Opus, Vorbis, libvpx,
-  libwebp and dav1d, linked statically, signed to run inside the app's sandbox. H.264 and HEVC still
-  go through VideoToolbox. Lossy audio is never re-encoded above the source's bitrate.
+- **Convert** between every common format:
+  - Video: MP4, MOV, M4V, MKV, WebM, AVI, animated GIF
+  - Audio: MP3, M4A (AAC, Apple Lossless), AAC, WAV, AIFF, FLAC, Ogg Vorbis, Opus, WMA
+  - Images: JPEG, PNG, HEIC, AVIF, WebP, TIFF, GIF, BMP, PDF
+  - PDF pages to images
+  - Reads far more: MKV, WebM, FLV, WMV, WMA, APE, AMR, VP9, AV1, RAW, PSD and others.
+- **Download** a video, a playlist or a whole channel. Choose from every resolution on offer (with
+  sizes), several at once. Subtitles can be embedded or saved as `.srt`. 1440p and 4K arrive as HEVC,
+  so they play in QuickTime.
+- **Presets:** Discord (10 MB), Email, WhatsApp, Instagram & TikTok, Podcast, Lossless, Web Images,
+  or save your own.
+- **Fit a size:** make any video fit 8, 10, 25 or more megabytes.
+- **Trim** videos and recordings before converting.
+- **Fast:** the Mac's media engine for H.264, HEVC and ProRes; Apple's own frameworks first, a
+  bundled FFmpeg for the rest.
+- **Everywhere on the Mac:** drag and drop, ⌘L for links, right-click in Finder, the Services menu,
+  Shortcuts actions and `conveta://` links.
+- **Stays current:** updates itself with [Sparkle](https://sparkle-project.org).
 
-## Downloads
+## Install
 
-Paste a link (⌘L, or ⌘V in the window, or drag it from the browser) and pick any format: MP4,
-MP3, GIF and the rest. Downloads use [yt-dlp](https://github.com/yt-dlp/yt-dlp) (public domain),
-which Conveta installs on first use from its official release, verifies against the release's
-SHA-256 list, and updates every few days. Video arrives as H.264/AAC MP4 when the site offers it,
-so MP4 downloads need no re-encoding. For posts that need an account, Settings → Downloads can
-borrow a browser's sign-in. Download only what you have the right to use.
+Download the latest `.dmg` from [Releases](https://github.com/mannobeats/conveta/releases/latest)
+and drag Conveta to Applications. Builds are signed with Developer ID and notarized by Apple.
 
-## Ways in
+To get the right-click menu, open Conveta → Settings → Finder → Turn On.
 
-- **Window:** drag files or folders in, pick a format per kind in the inspector, press Convert (⌘↩).
-- **Finder (startup disk):** right-click → *Convert with Conveta* → format. Turn it on once in Settings → Finder.
-- **Every disk:** right-click → *Convert to MP3 / MP4 / JPEG / PNG with Conveta* or *Add to Conveta* (Services).
-- **Shortcuts:** *Convert Files*, *Add Files to Conveta* and *Download Video* actions.
-- **URLs:** `conveta://download?url=…&format=mp3`, `conveta://action/convert`, `/stop`, `/add`, `/link`, `/clear`.
+## Build from source
 
-## Build and test
-
-Requires Xcode 26+, macOS 26+, and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Needs Xcode 26 or later, macOS 26 or later, and Homebrew.
 
 ```bash
-scripts/build-ffmpeg.sh   # once: builds the LGPL FFmpeg helper into Vendor/FFmpeg (pinned, checksummed)
-scripts/build.sh --open   # generate the project, build with zero warnings, install to ~/Applications, launch
-scripts/test.sh           # ConvetaKit tests + the app's self-test (Conveta --selftest)
-CONVETA_NETWORK_TESTS=1 scripts/test.sh   # also real downloads and engine install
+brew install xcodegen nasm cmake pkgconf meson ninja autoconf automake
+scripts/build-ffmpeg.sh          # once: builds the LGPL FFmpeg helper (universal), pinned and checksummed
+scripts/build.sh --open          # builds with zero warnings, installs to ~/Applications, launches
+scripts/test.sh                  # 90+ tests on real media, then the app's own self-test
+CONVETA_NETWORK_TESTS=1 scripts/test.sh   # also real downloads
 ```
 
-FFmpeg is licensed under the LGPL 2.1 or later; `Vendor/FFmpeg/BUILDINFO.txt` records the exact
-configuration and `scripts/build-ffmpeg.sh` rebuilds it from source.
+To sign with your own team, change `DEVELOPMENT_TEAM` and the bundle identifiers in `project.yml`.
 
-## Layout
+## How it's built
 
 ```
-Packages/ConvetaKit/   formats, probing, converters, output naming, Finder hand-off (no UI, fully tested)
-App/                   SwiftUI app: model (queue, preferences, folder access), views, integrations
-FinderExtension/       Finder Sync extension: the right-click menu
-Shared/                code both targets use (app group)
-Icon/AppIcon.icon      Icon Composer source for the app icon
+Packages/ConvetaKit/   the engine: formats, probing, converters, FFmpeg and yt-dlp, presets (no UI, fully tested)
+App/                   SwiftUI app: queue, inspector, link sheet, settings, integrations
+FinderExtension/       the right-click menu (Finder Sync)
+Shared/                code both targets use
+Icon/AppIcon.icon      the icon, as an Icon Composer document
+scripts/               build, test, FFmpeg and release scripts
+.github/workflows/     CI on every push; signed, notarized releases on every tag
 ```
+
+Conveta picks an engine per file. Apple's frameworks (AVFoundation, VideoToolbox, Core Audio,
+ImageIO) handle everything they can read and write. A bundled **LGPL-only** FFmpeg helper handles
+the rest. Downloads use [yt-dlp](https://github.com/yt-dlp/yt-dlp), which Conveta installs on first
+use from its official release, verifies against the published SHA-256 list, and keeps up to date.
+
+## Contributing
+
+Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). The
+[roadmap](https://github.com/mannobeats/conveta/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap)
+lists what's planned.
+
+## Responsible use
+
+Download only content you own or have permission to use, and respect each site's terms.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Conveta is [MIT licensed](LICENSE). It uses FFmpeg (LGPL 2.1+), LAME (LGPL), libvpx, libwebp, Opus,
+Vorbis and dav1d (BSD), Sparkle (MIT) and yt-dlp (Unlicense). See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

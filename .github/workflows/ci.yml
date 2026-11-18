@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: brew install xcodegen nasm cmake pkgconf meson ninja autoconf automake
+
+      - name: FFmpeg helper (cached)
+        id: ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: |
+            Vendor/FFmpeg/bin
+            Vendor/FFmpeg/BUILDINFO.txt
+          key: ffmpeg-${{ hashFiles('scripts/build-ffmpeg.sh', 'Vendor/FFmpeg/sources.sha256') }}
+
+      - name: Build FFmpeg helper
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        run: scripts/build-ffmpeg.sh
+
+      - name: ConvetaKit tests
+        working-directory: Packages/ConvetaKit
+        run: swift test
+
+      - name: Build the app (unsigned)
+        run: |
+          xcodegen generate
+          xcodebuild -project Conveta.xcodeproj -scheme Conveta -configuration Debug \
+            -destination 'platform=macOS' CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            build | tail -20
+
+      - name: App self-test
+        run: |
+          APP=$(find ~/Library/Developer/Xcode/DerivedData -name Conveta.app -path "*Debug*" | head -1)
+          "$APP/Contents/MacOS/Conveta" --selftest

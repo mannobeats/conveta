@@ -11,7 +11,9 @@ fi
 mkdir -p "$DEST"
 for tool in ffmpeg ffprobe; do
   cp -f "$SOURCE/$tool" "$DEST/$tool"
-  codesign --force --options runtime --timestamp=none \
+  # Release builds need a secure timestamp for notarization; debug builds skip the network round trip.
+  TIMESTAMP=$([[ "$CONFIGURATION" == "Release" ]] && echo "--timestamp" || echo "--timestamp=none")
+  codesign --force --options runtime $TIMESTAMP \
     --entitlements "$SRCROOT/App/Resources/Helper.entitlements" \
     --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "$DEST/$tool"
 done
