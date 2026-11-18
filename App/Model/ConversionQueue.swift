@@ -55,12 +55,24 @@ final class ConversionQueue {
 
     /// Adds files (folders are searched for media). With `format`, files that can become it use it;
     /// with `start`, they convert as soon as they are read.
-    func add(_ urls: [URL], format: OutputFormat? = nil, start: Bool = false) {
+    /// Adds files and converts them with a preset (from Finder or Shortcuts). Files the preset doesn't suit wait.
+    func add(_ urls: [URL], preset: Preset) {
+        let added = add(urls, format: preset.settings.format, start: false)
+        Task {
+            while added.contains(where: { $0.state == .probing }) { try? await Task.sleep(for: .milliseconds(50)) }
+            let suitable = added.filter { $0.kind.map(preset.applies(to:)) == true }
+            for job in suitable { job.settings = preset.apply(to: job.settings) }
+            convert(Array(suitable))
+        }
+    }
+
+    @discardableResult
+    func add(_ urls: [URL], format: OutputFormat? = nil, start: Bool = false) -> [ConversionJob] {
         let links = urls.filter(LinkDetector.isWebLink)
         if !links.isEmpty { addLinks(links, format: format, start: start) }
         let known = Set(jobs.filter { !$0.state.isFinished }.map(\.source.standardizedFileURL))
         let files = Self.expand(urls.filter(\.isFileURL)).filter { !known.contains($0.standardizedFileURL) }
-        guard !files.isEmpty else { return }
+        guard !files.isEmpty else { return [] }
 
         let added = files.map { url in
             ConversionJob(source: url, settings: ConversionSettings(format: format ?? .mp4))
@@ -75,6 +87,7 @@ final class ConversionQueue {
             if start { convert(added) }
             for job in added { job.thumbnail = await Self.thumbnail(for: job.source) }
         }
+        return added
     }
 
     private func prepare(_ job: ConversionJob, format: OutputFormat?) async {

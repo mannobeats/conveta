@@ -10,7 +10,10 @@ struct VideoConverter: Converter {
         let asset = AVURLAsset(url: request.source)
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else { throw ConversionError.noVideoTrack }
         let audioTrack = options.includeAudio ? try await asset.loadTracks(withMediaType: .audio).first : nil
-        let duration = try await asset.load(.duration).seconds
+        let fullDuration = try await asset.load(.duration).seconds
+        let trim = request.settings.trim
+        let start = trim?.start ?? 0
+        let duration = request.settings.outputDuration(source: fullDuration) ?? fullDuration
         let (naturalSize, transform, nominalRate, videoFormats) = try await videoTrack.load(
             .naturalSize, .preferredTransform, .nominalFrameRate, .formatDescriptions)
         let fileType: AVFileType = switch format {
@@ -41,7 +44,9 @@ struct VideoConverter: Converter {
             if rate < sourceRate - 0.01 { frameInterval = 1 / rate }
             let pixelFormat = codec == .proRes4444 ? kCVPixelFormatType_32BGRA : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
             videoOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: pixelFormat])
-            videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: Self.videoSettings(codec: codec, size: size, frameRate: rate, quality: options.quality))
+            let target = options.targetVideoBitrate(duration: duration, audioBitsPerSecond: 192_000)
+            videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: Self.videoSettings(codec: codec, size: size, frameRate: rate,
+                                                                                                    quality: options.quality, bitrate: target))
         }
         videoOutput.alwaysCopiesSampleData = false
         videoInput.transform = transform
@@ -68,14 +73,18 @@ struct VideoConverter: Converter {
             }
         }
 
+        if let trim {
+            reader.timeRange = CMTimeRange(start: CMTime(seconds: trim.start, preferredTimescale: 600),
+                                           duration: CMTime(seconds: trim.duration, preferredTimescale: 600))
+        }
         guard reader.startReading() else { throw reader.error ?? ConversionError.unreadable }
         guard writer.startWriting() else { throw writer.error ?? ConversionError.failed("The video couldn’t be written.") }
-        writer.startSession(atSourceTime: .zero)
+        writer.startSession(atSourceTime: CMTime(seconds: start, preferredTimescale: 600))
 
         let throttle = ProgressThrottle(progress)
         do {
             try await Self.pump(video: (videoOutput, videoInput), audio: audio, frameInterval: frameInterval, writer: writer) { seconds in
-                if duration > 0 { throttle.report(seconds / duration * 0.99) }
+                if duration > 0 { throttle.report((seconds - start) / duration * 0.99) }
             }
         } catch {
             reader.cancelReading()
@@ -152,7 +161,7 @@ struct VideoConverter: Converter {
         return CGSize(width: even(width), height: even(height))
     }
 
-    static func videoSettings(codec: VideoCodec, size: CGSize, frameRate: Double, quality: Quality) -> [String: Any] {
+    static func videoSettings(codec: VideoCodec, size: CGSize, frameRate: Double, quality: Quality, bitrate target: Double? = nil) -> [String: Any] {
         var settings: [String: Any] = [
             AVVideoWidthKey: Int(size.width),
             AVVideoHeightKey: Int(size.height),
@@ -161,7 +170,7 @@ struct VideoConverter: Converter {
         switch codec {
         case .h264, .hevc:
             let efficiency = codec == .hevc ? 0.6 : 1.0
-            let bitrate = max(400_000, size.width * size.height * frameRate * quality.bitsPerPixel * efficiency)
+            let bitrate = target ?? max(400_000, size.width * size.height * frameRate * quality.bitsPerPixel * efficiency)
             settings[AVVideoCodecKey] = codec == .hevc ? AVVideoCodecType.hevc : AVVideoCodecType.h264
             var compression: [String: Any] = [
                 AVVideoAverageBitRateKey: Int(bitrate),

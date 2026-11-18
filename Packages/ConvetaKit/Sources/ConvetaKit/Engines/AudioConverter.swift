@@ -7,7 +7,9 @@ struct AudioConverter: Converter {
     func convert(_ request: ConversionRequest, progress: @escaping ProgressHandler) async throws -> ConversionOutput {
         let asset = AVURLAsset(url: request.source)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else { throw ConversionError.noAudioTrack }
-        let duration = try await asset.load(.duration).seconds
+        let fullDuration = try await asset.load(.duration).seconds
+        let trim = request.settings.trim
+        let duration = request.settings.outputDuration(source: fullDuration) ?? fullDuration
         let formats = try await track.load(.formatDescriptions)
         let source = formats.first.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee }
 
@@ -33,13 +35,17 @@ struct AudioConverter: Converter {
         var disposed = false
         defer { if !disposed { ExtAudioFileDispose(file) } }
 
+        if let trim {
+            reader.timeRange = CMTimeRange(start: CMTime(seconds: trim.start, preferredTimescale: 48_000),
+                                           duration: CMTime(seconds: trim.duration, preferredTimescale: 48_000))
+        }
         guard reader.startReading() else { throw reader.error ?? ConversionError.unreadable }
         let throttle = ProgressThrottle(progress)
         do {
             while let sample = output.copyNextSampleBuffer() {
                 try Task.checkCancellation()
                 try Self.write(sample, to: file)
-                if duration > 0 { throttle.report(sample.presentationTimeStamp.seconds / duration) }
+                if duration > 0 { throttle.report((sample.presentationTimeStamp.seconds - (trim?.start ?? 0)) / duration) }
             }
         } catch {
             reader.cancelReading()

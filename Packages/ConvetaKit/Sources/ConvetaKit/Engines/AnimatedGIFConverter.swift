@@ -11,7 +11,9 @@ struct AnimatedGIFConverter: Converter {
         let options = request.settings.animation
         let asset = AVURLAsset(url: request.source)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw ConversionError.noVideoTrack }
-        let duration = try await asset.load(.duration).seconds
+        let fullDuration = try await asset.load(.duration).seconds
+        let start = request.settings.trim?.start ?? 0
+        let duration = request.settings.outputDuration(source: fullDuration) ?? fullDuration
         let (natural, transform) = try await track.load(.naturalSize, .preferredTransform)
         let shown = natural.applying(transform)
         let sourceSize = CGSize(width: abs(shown.width), height: abs(shown.height))
@@ -39,7 +41,7 @@ struct AnimatedGIFConverter: Converter {
         ] as CFDictionary)
         let frameProperties = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 1 / fps]] as CFDictionary
 
-        let times = (0..<count).map { CMTime(seconds: Double($0) / fps, preferredTimescale: 600) }
+        let times = (0..<count).map { CMTime(seconds: start + Double($0) / fps, preferredTimescale: 600) }
         let throttle = ProgressThrottle(progress)
         var written = 0
         for await result in generator.images(for: times) {

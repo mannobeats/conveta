@@ -8,7 +8,7 @@ struct FFmpegConverter: Converter {
 
     func convert(_ request: ConversionRequest, progress: @escaping ProgressHandler) async throws -> ConversionOutput {
         let arguments = try Self.arguments(for: request)
-        let duration = request.info.duration ?? 0
+        let duration = request.settings.outputDuration(source: request.info.duration) ?? 0
         let throttle = ProgressThrottle(progress)
         let onLine: @Sendable (String) -> Void = { line in
             // -progress reports "out_time_us=12345678" several times a second.
@@ -55,8 +55,12 @@ struct FFmpegConverter: Converter {
     static func arguments(for request: ConversionRequest) throws -> [String] {
         let settings = request.settings
         let format = settings.format
-        var args = ["-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-progress", "pipe:1", "-nostats",
-                    "-i", request.source.path]
+        var args = ["-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-progress", "pipe:1", "-nostats"]
+        if let trim = settings.trim {
+            // Input options: seek before decoding (fast and, with re-encoding, frame accurate).
+            args += ["-ss", String(format: "%.3f", trim.start), "-t", String(format: "%.3f", trim.duration)]
+        }
+        args += ["-i", request.source.path]
 
         switch (request.info.kind, format.kind) {
         case (.video, .video):
@@ -132,22 +136,25 @@ struct FFmpegConverter: Converter {
         let output = scaledSize(info.pixelSize, resolution: options.resolution) ?? info.pixelSize ?? CGSize(width: 1920, height: 1080)
         let rate = min(Double(options.frameRate == .original ? 60 : options.frameRate.rawValue), info.frameRate ?? 30)
         let pixels = output.width * output.height * rate
+        let audioRate: Double = format == .webm ? 128_000 : 192_000
+        let target = options.targetVideoBitrate(duration: settings.outputDuration(source: info.duration), audioBitsPerSecond: audioRate)
 
         switch (format, codec) {
         case (.webm, _):
             let crf = [Quality.compact: 40, .balanced: 34, .high: 28, .maximum: 20][options.quality] ?? 32
-            args += ["-c:v", "libvpx-vp9", "-crf", "\(crf)", "-b:v", "0", "-row-mt", "1", "-deadline", "good", "-cpu-used", "3", "-pix_fmt", "yuv420p"]
+            let rateControl = target.map { ["-b:v", bitrate($0)] } ?? ["-crf", "\(crf)", "-b:v", "0"]
+            args += ["-c:v", "libvpx-vp9"] + rateControl + ["-row-mt", "1", "-deadline", "good", "-cpu-used", "3", "-pix_fmt", "yuv420p"]
         case (.avi, _):
             let q = [Quality.compact: 8, .balanced: 5, .high: 3, .maximum: 2][options.quality] ?? 5
-            args += ["-c:v", "mpeg4", "-q:v", "\(q)", "-vtag", "xvid", "-pix_fmt", "yuv420p"]
+            args += ["-c:v", "mpeg4"] + (target.map { ["-b:v", bitrate($0)] } ?? ["-q:v", "\(q)"]) + ["-vtag", "xvid", "-pix_fmt", "yuv420p"]
         case (_, .hevc?):
-            args += ["-c:v", "hevc_videotoolbox", "-b:v", bitrate(pixels * options.quality.bitsPerPixel * 0.6), "-tag:v", "hvc1", "-pix_fmt", "yuv420p", "-allow_sw", "1"]
+            args += ["-c:v", "hevc_videotoolbox", "-b:v", bitrate(target ?? pixels * options.quality.bitsPerPixel * 0.6), "-tag:v", "hvc1", "-pix_fmt", "yuv420p", "-allow_sw", "1"]
         case (_, .proRes422?):
             args += ["-c:v", "prores_ks", "-profile:v", "2", "-pix_fmt", "yuv422p10le"]
         case (_, .proRes4444?):
             args += ["-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuva444p10le"]
         default:
-            args += ["-c:v", "h264_videotoolbox", "-b:v", bitrate(pixels * options.quality.bitsPerPixel), "-profile:v", "high", "-pix_fmt", "yuv420p", "-allow_sw", "1"]
+            args += ["-c:v", "h264_videotoolbox", "-b:v", bitrate(target ?? pixels * options.quality.bitsPerPixel), "-profile:v", "high", "-pix_fmt", "yuv420p", "-allow_sw", "1"]
         }
         if !filters.isEmpty { args += ["-vf", filters.joined(separator: ",")] }
 
@@ -175,7 +182,7 @@ struct FFmpegConverter: Converter {
         return CGSize(width: even(size.width), height: even(size.height))
     }
 
-    private static func bitrate(_ bits: Double) -> String { "\(Int(max(400_000, bits)) / 1000)k" }
+    private static func bitrate(_ bits: Double) -> String { "\(Int(max(150_000, bits)) / 1000)k" }
 
     // MARK: GIF
 

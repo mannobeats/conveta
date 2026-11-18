@@ -13,6 +13,8 @@ public struct ConversionSettings: Codable, Sendable, Hashable {
     public var downloadHeight: Int?
     /// For downloads: whether and how to fetch subtitles.
     public var subtitles = SubtitleOptions()
+    /// Keep only this part of a video or song.
+    public var trim: TrimRange?
 
     public init(format: OutputFormat) {
         self.format = format
@@ -29,6 +31,34 @@ public struct ConversionSettings: Codable, Sendable, Hashable {
         document = (try? c.decodeIfPresent(DocumentOptions.self, forKey: .document)) ?? DocumentOptions()
         downloadHeight = try? c.decodeIfPresent(Int.self, forKey: .downloadHeight)
         subtitles = (try? c.decodeIfPresent(SubtitleOptions.self, forKey: .subtitles)) ?? SubtitleOptions()
+        trim = try? c.decodeIfPresent(TrimRange.self, forKey: .trim)
+    }
+
+    /// The length of the result, given the source's length.
+    public func outputDuration(source: Double?) -> Double? {
+        guard let source else { return nil }
+        guard let trim else { return source }
+        return max(0, min(trim.end, source) - trim.start)
+    }
+}
+
+// MARK: - Trim
+
+/// A part of a video or song, in seconds from the start.
+public struct TrimRange: Codable, Sendable, Hashable {
+    public var start: Double
+    public var end: Double
+
+    public init(start: Double, end: Double) {
+        self.start = max(0, start)
+        self.end = max(self.start, end)
+    }
+
+    public var duration: Double { end - start }
+
+    /// `nil` when the range covers the whole of `duration` (nothing to trim).
+    public func meaningful(for duration: Double) -> TrimRange? {
+        start > 0.05 || end < duration - 0.05 ? self : nil
     }
 }
 
@@ -141,7 +171,29 @@ public struct VideoOptions: Codable, Sendable, Hashable {
     public var resolution: Resolution = .original
     public var frameRate: FrameRate = .original
     public var includeAudio = true
+    /// Fit the file into this many megabytes (for Discord, email...). Overrides quality.
+    public var targetMegabytes: Int?
     public init() {}
+
+    public static let sizeLimits = [8, 10, 16, 25, 50, 100, 250, 500]
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        codec = (try? c.decode(VideoCodec.self, forKey: .codec)) ?? .h264
+        quality = (try? c.decode(Quality.self, forKey: .quality)) ?? .balanced
+        resolution = (try? c.decode(Resolution.self, forKey: .resolution)) ?? .original
+        frameRate = (try? c.decode(FrameRate.self, forKey: .frameRate)) ?? .original
+        includeAudio = (try? c.decode(Bool.self, forKey: .includeAudio)) ?? true
+        targetMegabytes = try? c.decodeIfPresent(Int.self, forKey: .targetMegabytes)
+    }
+
+    /// The video data rate (bit/s) that fits `targetMegabytes` over `duration`, leaving room for sound
+    /// and container overhead. `nil` without a target or a known length.
+    public func targetVideoBitrate(duration: Double?, audioBitsPerSecond: Double) -> Double? {
+        guard let targetMegabytes, let duration, duration > 0 else { return nil }
+        let budget = Double(targetMegabytes) * 8_000_000 * 0.96 / duration   // 4 % for the container
+        return max(150_000, budget - (includeAudio ? audioBitsPerSecond : 0))
+    }
 }
 
 // MARK: - Audio

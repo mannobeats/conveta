@@ -24,7 +24,15 @@ struct VideoSection: View {
                 }
                 .help(codec.summary)
             }
-            if codec.usesQuality {
+            if codec.usesQuality || current.format == .webm || current.format == .avi {
+                Picker("Size Limit", selection: bind(current, \.video.targetMegabytes, update)) {
+                    Text("None").tag(Int?.none)
+                    Divider()
+                    ForEach(VideoOptions.sizeLimits, id: \.self) { Text("\($0) MB").tag(Int?.some($0)) }
+                }
+                .help("Fits the video into this size, for Discord, email or messaging limits")
+            }
+            if codec.usesQuality, current.video.targetMegabytes == nil {
                 Picker("Quality", selection: bind(current, \.video.quality, update)) {
                     ForEach(Quality.allCases) { Text($0.displayName).tag($0) }
                 }

@@ -8,12 +8,15 @@ public struct HandoffRequest: Codable, Sendable, Identifiable, Equatable {
     public var paths: [String]
     /// `nil` opens the files in Conveta without starting a conversion.
     public var format: OutputFormat?
+    /// A preset to convert with, instead of a bare format.
+    public var presetID: String?
     public var createdAt: Date
 
-    public init(id: UUID = UUID(), paths: [String], format: OutputFormat?, createdAt: Date = .now) {
+    public init(id: UUID = UUID(), paths: [String], format: OutputFormat?, presetID: String? = nil, createdAt: Date = .now) {
         self.id = id
         self.paths = paths
         self.format = format
+        self.presetID = presetID
         self.createdAt = createdAt
     }
 

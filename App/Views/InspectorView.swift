@@ -41,7 +41,7 @@ private struct SettingsForm: View {
             ForEach(kinds) { kind in
                 let members = targets.filter { $0.kind == kind }
                 KindSettings(kind: kind, count: members.count, showsKindTitle: kinds.count > 1,
-                             current: members[0].settings)
+                             current: members[0].settings, single: members.count == 1 ? members[0] : nil)
             }
         }
         .formStyle(.grouped)
@@ -56,10 +56,13 @@ private struct KindSettings: View {
     let count: Int
     let showsKindTitle: Bool
     let current: ConversionSettings
+    /// The file, when only one of this kind is being edited (it can then be trimmed).
+    let single: ConversionJob?
 
     var body: some View {
         let format = current.format
         Section {
+            PresetMenu(kind: kind, current: current, update: update)
             FormatGrid(formats: kind.outputFormats, selected: format) { choice in
                 withAnimation(Theme.motion) { update { $0.format = choice } }
             }
@@ -78,6 +81,10 @@ private struct KindSettings: View {
             }
         } footer: {
             Text(format.summary).foregroundStyle(.secondary)
+        }
+
+        if let single, !single.isDownload, kind == .video || kind == .audio, let duration = single.info?.duration, duration > 1 {
+            TrimSection(job: single, duration: duration, update: update)
         }
 
         switch (kind, format.kind) {

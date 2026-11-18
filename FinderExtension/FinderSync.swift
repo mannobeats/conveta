@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 final class FinderSync: FIFinderSync {
     /// Formats offered for the current selection, indexed by menu item tag.
     private var offered: [OutputFormat] = []
+    private var offeredPresets: [Preset] = []
 
     override init() {
         super.init()
@@ -36,6 +37,20 @@ final class FinderSync: FIFinderSync {
             item.toolTip = format.summary
             submenu.addItem(item)
         }
+        // Presets that suit every selected file: the person's own first, then a few built in.
+        offeredPresets = Preset.suiting(Array(kinds), from: PresetStore(suiteName: AppGroup.identifier).all)
+        if !offeredPresets.isEmpty {
+            submenu.addItem(.separator())
+            let header = NSMenuItem(title: "Presets", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            submenu.addItem(header)
+            for (index, preset) in offeredPresets.enumerated() {
+                let item = NSMenuItem(title: preset.name, action: #selector(convertWithPreset(_:)), keyEquivalent: "")
+                item.tag = index
+                item.toolTip = preset.summary
+                submenu.addItem(item)
+            }
+        }
         if !offered.isEmpty { submenu.addItem(.separator()) }
         submenu.addItem(NSMenuItem(title: "Open in Conveta…", action: #selector(openInApp(_:)), keyEquivalent: ""))
 
@@ -49,6 +64,14 @@ final class FinderSync: FIFinderSync {
     @objc private func convert(_ sender: NSMenuItem) {
         guard offered.indices.contains(sender.tag) else { return }
         handOff(format: offered[sender.tag])
+    }
+
+    @objc private func convertWithPreset(_ sender: NSMenuItem) {
+        guard offeredPresets.indices.contains(sender.tag),
+              let urls = FIFinderSyncController.default().selectedItemURLs(), !urls.isEmpty else { return }
+        let request = HandoffRequest(paths: urls.map(\.path), format: nil, presetID: offeredPresets[sender.tag].id)
+        AppGroup.handoffs.save(request)
+        NSWorkspace.shared.open(HandoffStore.url(for: request))
     }
 
     @objc private func openInApp(_ sender: NSMenuItem) {

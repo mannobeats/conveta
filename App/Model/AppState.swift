@@ -13,6 +13,7 @@ final class AppState {
     let access: FolderAccess
     let queue: ConversionQueue
     let downloader: Downloader
+    let presets = PresetLibrary(store: PresetStore(suiteName: AppGroup.identifier))
     var showInspector = true
     var isImporterPresented = false
     var isLinkSheetPresented = false
@@ -84,6 +85,12 @@ final class AppState {
             NSApp.activate()
             access.requestAccess(to: folder, reason: "To convert files from Finder, Conveta needs permission to open “\(folder.lastPathComponent)”. Choosing your home folder covers every folder inside it, so you’re only asked once.")
         }
-        open(urls.filter(access.canRead), format: request.format, start: request.format != nil)
+        let readable = urls.filter(access.canRead)
+        if let id = request.presetID, let preset = presets.preset(id: id) {
+            queue.add(readable, preset: preset)
+            NSApp.activate()
+        } else {
+            open(readable, format: request.format, start: request.format != nil)
+        }
     }
 }
