@@ -141,14 +141,47 @@ public struct DownloadEngine: Sendable {
         guard let report = try? JSONDecoder().decode(Report.self, from: json) else { throw DownloadError.unsupportedLink }
         if report.type == "playlist" { throw DownloadError.playlist }
         let page = report.webpageURL.flatMap(URL.init(string:)) ?? link
-        let hasVideo = (report.vcodec.map { $0 != "none" } ?? true) && (report.width != nil || report.height != nil || report.vcodec != nil)
+        let formatsHaveVideo = report.formats?.contains { ($0.vcodec ?? "none") != "none" && $0.height != nil } ?? false
+        let hasVideo = formatsHaveVideo || ((report.vcodec.map { $0 != "none" } ?? true) && (report.width != nil || report.height != nil || report.vcodec != nil))
         return RemoteMedia(
             link: link, pageURL: page, id: report.id ?? UUID().uuidString,
             title: report.title ?? "Download", uploader: report.uploader ?? report.channel,
             duration: report.duration, thumbnail: report.thumbnail.flatMap(URL.init(string:)),
             site: LinkDetector.siteName(extractor: report.extractorKey, url: page),
-            hasVideo: hasVideo, width: report.width, height: report.height
+            hasVideo: hasVideo, width: report.width, height: report.height,
+            qualities: qualities(from: report.formats ?? [], duration: report.duration)
         )
+    }
+
+    /// Every picture height the site offers, best first, each with an estimated size
+    /// (largest video stream at that height plus the best sound).
+    static func qualities(from formats: [Report.Format], duration: Double?) -> [RemoteMedia.Quality] {
+        func size(_ format: Report.Format) -> Int64? {
+            if let bytes = format.filesize ?? format.filesizeApprox, bytes > 0 { return bytes }
+            if let tbr = format.tbr, let duration, tbr > 0 { return Int64(tbr * 125 * duration) }
+            return nil
+        }
+        // The sound Conveta picks (AAC when offered), and per height the picture it picks:
+        // H.264, then VP9, then anything else, matching the download's preference order.
+        let audioFormats = formats.filter { $0.vcodec == "none" && ($0.acodec ?? "none") != "none" }
+        let audio = (audioFormats.filter { ($0.acodec ?? "").hasPrefix("mp4a") }.compactMap(size).max()
+            ?? audioFormats.compactMap(size).max()) ?? 0
+        func rank(_ codec: String) -> Int {
+            if codec.hasPrefix("avc") || codec.hasPrefix("h264") { return 0 }
+            if codec.hasPrefix("vp9") || codec.hasPrefix("vp09") { return 1 }
+            return 2
+        }
+        var best: [Int: (rank: Int, bytes: Int64)] = [:]
+        for format in formats where (format.vcodec ?? "none") != "none" {
+            guard let height = format.height, height >= 144 else { continue }
+            let codecRank = rank(format.vcodec ?? "")
+            let bytes = size(format).map { $0 + ((format.acodec ?? "none") == "none" ? audio : 0) } ?? 0
+            if let current = best[height], current.rank < codecRank || (current.rank == codecRank && current.bytes >= bytes) { continue }
+            best[height] = (codecRank, bytes)
+        }
+        return best.keys.sorted(by: >).map { height in
+            RemoteMedia.Quality(height: height, estimatedBytes: best[height].flatMap { $0.bytes > 0 ? $0.bytes : nil })
+        }
     }
 
     struct Report: Decodable {
@@ -164,22 +197,59 @@ public struct DownloadEngine: Sendable {
         var vcodec: String?
         var width: Int?
         var height: Int?
+        var formats: [Format]?
 
         enum CodingKeys: String, CodingKey {
-            case type = "_type", id, title, uploader, channel, duration, thumbnail, vcodec, width, height
+            case type = "_type", id, title, uploader, channel, duration, thumbnail, vcodec, width, height, formats
             case webpageURL = "webpage_url", extractorKey = "extractor_key"
+        }
+
+        struct Format: Decodable {
+            var height: Int?
+            var vcodec: String?
+            var acodec: String?
+            var filesize: Int64?
+            var filesizeApprox: Int64?
+            var tbr: Double?
+
+            enum CodingKeys: String, CodingKey {
+                case height, vcodec, acodec, filesize, tbr
+                case filesizeApprox = "filesize_approx"
+            }
+
+            init(from decoder: Decoder) throws {
+                // Sites fill these loosely (numbers as floats, missing fields); never fail the whole report.
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                height = (try? c.decodeIfPresent(Int.self, forKey: .height)) ?? nil
+                vcodec = (try? c.decodeIfPresent(String.self, forKey: .vcodec)) ?? nil
+                acodec = (try? c.decodeIfPresent(String.self, forKey: .acodec)) ?? nil
+                filesize = ((try? c.decodeIfPresent(Double.self, forKey: .filesize)) ?? nil).map { Int64($0) }
+                filesizeApprox = ((try? c.decodeIfPresent(Double.self, forKey: .filesizeApprox)) ?? nil).map { Int64($0) }
+                tbr = (try? c.decodeIfPresent(Double.self, forKey: .tbr)) ?? nil
+            }
         }
     }
 
     // MARK: Downloading
 
-    /// Downloads `media` into `folder` and returns the file. Video comes as MP4 with H.264 and AAC
-    /// when the site offers it (so it usually needs no conversion), never taller than `maxHeight`.
-    public func download(_ media: RemoteMedia, audioOnly: Bool, maxHeight: Int?, into folder: URL,
+    /// How the downloaded streams are packaged.
+    public enum Container: String, Sendable {
+        /// MP4, preferring H.264 and AAC at the same height. Above 1080p sites often only have VP9/AV1.
+        case mp4
+        /// WebM, preferring VP9 and Opus, so a WebM never needs re-encoding.
+        case webm
+        /// Matroska, whatever the site serves best.
+        case mkv
+        /// Sound only, preferring AAC.
+        case audio
+    }
+
+    /// Downloads `media` into `folder` and returns the file, never taller than `maxHeight`.
+    public func download(_ media: RemoteMedia, container: Container, maxHeight: Int?, into folder: URL,
                          progress: @escaping ProgressHandler) async throws -> URL {
         guard isInstalled else { throw DownloadError.engineMissing }
-        let args = commonArguments + Self.downloadArguments(audioOnly: audioOnly, maxHeight: maxHeight, folder: folder) + [media.pageURL.absoluteString]
-        let tracker = DownloadProgress(parts: audioOnly ? 1 : 2, handler: progress)
+        let args = commonArguments + Self.downloadArguments(container: container, maxHeight: maxHeight, folder: folder) + [media.pageURL.absoluteString]
+        let tracker = DownloadProgress(parts: container == .audio ? 1 : 2, handler: progress)
         let output: String
         do {
             output = try await ToolRunner.run(executable, args) { line in tracker.consume(line) }
@@ -193,7 +263,7 @@ public struct DownloadEngine: Sendable {
         return URL(filePath: path)
     }
 
-    static func downloadArguments(audioOnly: Bool, maxHeight: Int?, folder: URL) -> [String] {
+    static func downloadArguments(container: Container, maxHeight: Int?, folder: URL) -> [String] {
         var args = [
             "--newline", "--no-mtime", "--no-part", "-P", folder.path, "-o", "download.%(ext)s",
             "--progress-template", "download:conveta-progress %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
@@ -201,11 +271,16 @@ public struct DownloadEngine: Sendable {
             // --print alone would only simulate and silence progress.
             "--no-simulate", "--progress",
         ]
-        if audioOnly {
-            args += ["-f", "ba/b", "-S", "acodec:aac"]
-        } else {
-            let resolution = maxHeight.map { "res:\($0)" } ?? "res"
-            args += ["-f", "bv*+ba/b", "-S", "\(resolution),vcodec:h264,acodec:aac", "--merge-output-format", "mp4"]
+        if container == .audio {
+            return args + ["-f", "ba/b", "-S", "acodec:aac"]
+        }
+        // A strict height limit, falling back to the best there is only when nothing fits.
+        let limit = maxHeight.map { "[height<=\($0)]" } ?? ""
+        args += ["-f", "bv*\(limit)+ba/b\(limit)/bv*+ba/b"]
+        switch container {
+        case .mp4: args += ["-S", "res,vcodec:h264,acodec:aac", "--merge-output-format", "mp4"]
+        case .webm: args += ["-S", "res,vcodec:vp9,acodec:opus", "--merge-output-format", "webm"]
+        case .mkv, .audio: args += ["-S", "res", "--merge-output-format", "mkv"]
         }
         return args
     }

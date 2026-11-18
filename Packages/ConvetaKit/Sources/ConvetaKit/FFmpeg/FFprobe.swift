@@ -30,6 +30,7 @@ enum FFprobe {
         info.hasAudio = audio != nil
         info.duration = report.format?.duration.flatMap(Double.init) ?? (video ?? audio)?.duration.flatMap(Double.init)
         if let rate = audio?.bitRate.flatMap(Double.init), rate > 0 { info.audioBitrate = Int((rate / 1000).rounded()) }
+        if video != nil, let audio { info.audioCodec = audio.codecName.map(Self.codecName) }
         if let video {
             var width = video.width ?? 0, height = video.height ?? 0
             if let rotation = video.rotation, abs(rotation) % 180 == 90 { swap(&width, &height) }

@@ -97,7 +97,7 @@ struct JobRow: View {
         case .probing where job.isDownload:
             return job.source.absoluteString
         default:
-            if let remote = job.remote { return remote.details }
+            if let remote = job.remote { return remote.details(chosenHeight: job.settings.downloadHeight) }
             var parts: [String] = []
             if let info = job.info {
                 parts.append(info.fileSize.fileSizeText)

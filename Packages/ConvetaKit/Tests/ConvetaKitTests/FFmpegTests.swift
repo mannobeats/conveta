@@ -225,6 +225,24 @@ struct FFmpegConversionTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: out.path).isEmpty)
     }
 
+    @Test("VP9 inside MP4 (how YouTube serves 1440p+) is detected and converted to playable HEVC")
+    func vp9InMP4() async throws {
+        let fixtures = try Fixtures()
+        defer { fixtures.remove() }
+        let source = try await make(fixtures, "Trailer.mp4", ["-f", "lavfi", "-i", "testsrc2=size=2560x1440:rate=30", "-f", "lavfi", "-i", "sine=frequency=500",
+                                                            "-t", "1", "-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8", "-c:a", "aac", "-tag:v", "vp09"])
+        let info = try await MediaProbe.probe(source, tools: tools)
+        #expect(info.codec == "VP9")
+        #expect(!info.readableByApple)
+        #expect(!info.playsEverywhereOnApple)
+
+        let settings = DownloadService.conversionSettings(for: ConversionSettings(format: .mp4), info: info)
+        let (output, converted) = try await convert(source, settings, fixtures)
+        #expect(try await codec(output) == "hevc,aac")
+        #expect(converted.playsEverywhereOnApple)
+        #expect(converted.pixelSize == CGSize(width: 2560, height: 1440))
+    }
+
     @Test("Damaged files fail with a readable message")
     func damaged() async throws {
         let fixtures = try Fixtures()

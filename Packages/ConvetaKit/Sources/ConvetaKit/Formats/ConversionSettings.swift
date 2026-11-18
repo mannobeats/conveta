@@ -9,6 +9,8 @@ public struct ConversionSettings: Codable, Sendable, Hashable {
     public var image = ImageOptions()
     public var animation = AnimationOptions()
     public var document = DocumentOptions()
+    /// For downloads: the exact picture height to fetch; `nil` takes the best on offer.
+    public var downloadHeight: Int?
 
     public init(format: OutputFormat) {
         self.format = format

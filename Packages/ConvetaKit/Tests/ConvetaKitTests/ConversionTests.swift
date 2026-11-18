@@ -311,8 +311,14 @@ struct ConversionTests {
         #expect(reported.last == 1)
         #expect(reported == reported.sorted())
 
-        let task = Task { try await service.convert(movie, info: info, settings: settings, into: out) }
-        try await Task.sleep(for: .milliseconds(150))
+        // Cancel as soon as the conversion reports progress, not after a guessed delay.
+        let started = AsyncStream<Void>.makeStream()
+        let task = Task {
+            try await service.convert(movie, info: info, settings: settings, into: out) { value in
+                if value > 0 { started.continuation.yield() }
+            }
+        }
+        for await _ in started.stream { break }
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
         let files = try FileManager.default.contentsOfDirectory(atPath: out.path)

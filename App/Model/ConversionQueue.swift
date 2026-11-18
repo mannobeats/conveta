@@ -92,7 +92,7 @@ final class ConversionQueue {
 
     /// Adds web links (YouTube, Instagram, TikTok and more). Each is read for its title and
     /// thumbnail, then downloads like a file converts. The engine installs on first use.
-    func addLinks(_ links: [URL], format: OutputFormat? = nil, start: Bool = false) {
+    func addLinks(_ links: [URL], format: OutputFormat? = nil, height: Int? = nil, start: Bool = false) {
         let known = Set(jobs.filter { !$0.state.isFinished }.map(\.source.absoluteString))
         let fresh = links.filter { !known.contains($0.absoluteString) }
         guard !fresh.isEmpty else { return }
@@ -107,19 +107,45 @@ final class ConversionQueue {
                 return
             }
             await withDiscardingTaskGroup { group in
-                for job in added { group.addTask { await self.prepareLink(job, format: format) } }
+                for job in added { group.addTask { await self.prepareLink(job, format: format, height: height) } }
             }
             if start { convert(added) }
         }
     }
 
-    private func prepareLink(_ job: ConversionJob, format: OutputFormat?) async {
+    /// Adds a link that was already read (by the link sheet): one download per chosen height,
+    /// named "Title (1080p)" when there are several. Starts at once.
+    func addDownloads(_ media: RemoteMedia, heights: [Int?], format: OutputFormat) {
+        let several = heights.count > 1
+        let added = heights.map { height -> ConversionJob in
+            var settings = preferences.settings(for: media.kind)
+            if media.kind.outputFormats.contains(format) { settings.format = format }
+            settings.downloadHeight = height
+            let job = ConversionJob(source: media.link, settings: settings)
+            job.remote = media
+            job.info = media.plannedInfo
+            if several, let height { job.nameSuffix = " (\(RemoteMedia.Quality(height: height, estimatedBytes: nil).label))" }
+            job.state = .ready
+            return job
+        }
+        jobs.append(contentsOf: added)
+        convert(added)
+        if let thumbnail = media.thumbnail {
+            Task {
+                let image = await Self.image(at: thumbnail)
+                for job in added { job.thumbnail = image }
+            }
+        }
+    }
+
+    private func prepareLink(_ job: ConversionJob, format: OutputFormat?, height: Int?) async {
         do {
             let media = try await downloader.engine.inspect(job.source)
             job.remote = media
             job.info = media.plannedInfo
             var settings = preferences.settings(for: media.kind)
             if let format, media.kind.outputFormats.contains(format) { settings.format = format }
+            settings.downloadHeight = height
             job.settings = settings
             job.state = .ready
             if let thumbnail = media.thumbnail { job.thumbnail = await Self.image(at: thumbnail) }
@@ -128,7 +154,7 @@ final class ConversionQueue {
         }
     }
 
-    private static func image(at url: URL) async -> NSImage? {
+    static func image(at url: URL) async -> NSImage? {
         guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
         return NSImage(data: data)
     }
@@ -232,6 +258,7 @@ final class ConversionQueue {
         let source = job.source
         let service = service
         let remote = job.remote
+        let suffix = job.nameSuffix
         let downloads = remote.map { _ in DownloadService(engine: downloader.engine, conversion: service) }
 
         tasks[job.id] = Task {
@@ -242,7 +269,7 @@ final class ConversionQueue {
                 guard access.canWrite(to: folder) else { throw ConversionError.noWriteAccess(folder) }
                 let output: URL
                 if let remote, let downloads {
-                    output = try await downloads.download(remote, settings: settings, into: folder, progress: report)
+                    output = try await downloads.download(remote, settings: settings, into: folder, nameSuffix: suffix, progress: report)
                 } else {
                     guard access.canRead(source) else { throw ConversionError.unreadable }
                     output = try await service.convert(source, info: info, settings: settings, into: folder, progress: report)

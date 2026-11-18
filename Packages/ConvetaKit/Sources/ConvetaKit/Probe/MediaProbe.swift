@@ -14,12 +14,14 @@ public struct MediaInfo: Sendable, Hashable {
     public var codec: String?
     public var sampleRate: Double?
     public var channels: Int?
+    /// The sound's codec when the file also has video ("AAC", "Opus"...).
+    public var audioCodec: String?
     /// Audio data rate of the source in kbit/s, when known.
     public var audioBitrate: Int?
     public var hasAudio = false
     public var frameCount = 1
     public var pageCount: Int?
-    /// Whether AVFoundation or ImageIO read the file. When `false`, only FFmpeg can convert it.
+    /// Whether AVFoundation or ImageIO can decode the file. When `false`, only FFmpeg can convert it.
     public var readableByApple = true
 
     /// A compact line such as "1920×1080 · 0:42 · H.264".
@@ -36,6 +38,13 @@ public struct MediaInfo: Sendable, Hashable {
 
     /// The data rate to encode lossy audio at: the request, but never above what the source has,
     /// since re-encoding at a higher rate only makes the file bigger. Lossless sources keep the request.
+    /// Whether QuickTime and every Apple device play it as is: H.264 or HEVC picture, AAC or no sound.
+    public var playsEverywhereOnApple: Bool {
+        let video = kind != .video || ["H.264", "HEVC"].contains(codec ?? "")
+        let audio = !hasAudio || audioCodec == nil || ["AAC", "Apple Lossless", "MP3"].contains(audioCodec ?? "")
+        return readableByApple && video && audio
+    }
+
     public func effectiveAudioBitrate(_ requested: Int) -> Int {
         let lossless = ["PCM", "FLAC", "Apple Lossless", "APE", "WavPack", "TrueHD"].contains(codec ?? "")
         guard let audioBitrate, audioBitrate > 0, !lossless || kind == .video else { return requested }
@@ -129,8 +138,9 @@ public enum MediaProbe {
         info.hasAudio = !audioTracks.isEmpty
 
         if let audio = audioTracks.first, !videoTracks.isEmpty {
-            let rate = try await audio.load(.estimatedDataRate)
+            let (rate, formats) = try await audio.load(.estimatedDataRate, .formatDescriptions)
             if rate > 0 { info.audioBitrate = Int((rate / 1000).rounded()) }
+            info.audioCodec = formats.first.map { codecName(CMFormatDescriptionGetMediaSubType($0)) }
         }
         if let track = videoTracks.first {
             let (natural, transform, fps, formats) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate, .formatDescriptions)
@@ -138,6 +148,12 @@ public enum MediaProbe {
             info.pixelSize = CGSize(width: abs(shown.width).rounded(), height: abs(shown.height).rounded())
             info.frameRate = Double(fps)
             info.codec = formats.first.map { codecName(CMFormatDescriptionGetMediaSubType($0)) }
+            // AVFoundation lists these but can't decode them (QuickTime shows a frozen picture),
+            // so FFmpeg converts them.
+            if let codec = formats.first.map(CMFormatDescriptionGetMediaSubType),
+               [kCMVideoCodecType_VP9, kCMVideoCodecType_AV1, FourCharCode(0x7670_3038) /* vp08 */].contains(codec) {
+                info.readableByApple = false
+            }
         } else if let track = audioTracks.first {
             let formats = try await track.load(.formatDescriptions)
             let rate = try await track.load(.estimatedDataRate)

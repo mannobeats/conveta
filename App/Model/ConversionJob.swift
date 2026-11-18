@@ -34,6 +34,8 @@ final class ConversionJob: Identifiable {
     let source: URL
     /// What the link points to, once read. `nil` for files.
     var remote: RemoteMedia?
+    /// Added to a download's file name when several sizes of one video are saved, e.g. " (1080p)".
+    var nameSuffix = ""
     var info: MediaInfo?
     var settings: ConversionSettings
     var state: State = .probing
@@ -51,7 +53,7 @@ final class ConversionJob: Identifiable {
 
     var isDownload: Bool { !source.isFileURL }
     var name: String {
-        if let remote { return remote.title }
+        if let remote { return remote.title + nameSuffix }
         return isDownload ? (source.host() ?? "") + source.path() : source.lastPathComponent
     }
     var kind: MediaKind? { info?.kind }

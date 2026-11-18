@@ -16,13 +16,59 @@ public struct RemoteMedia: Sendable, Hashable, Codable {
     public var hasVideo: Bool
     public var width: Int?
     public var height: Int?
+    /// The picture heights on offer, tallest first.
+    public var qualities: [Quality] = []
+
+    public struct Quality: Sendable, Hashable, Codable, Identifiable {
+        public var height: Int
+        public var estimatedBytes: Int64?
+        public var id: Int { height }
+
+        public init(height: Int, estimatedBytes: Int64?) {
+            self.height = height
+            self.estimatedBytes = estimatedBytes
+        }
+
+        /// "4K", "1440p", "1080p"...
+        public var label: String {
+            switch height {
+            case 4320...: "8K"
+            case 2160..<4320: "4K"
+            default: "\(height)p"
+            }
+        }
+
+        /// What the label means for people who don't think in pixels.
+        public var nickname: String? {
+            switch height {
+            case 4320...: "Ultra HD"
+            case 2160..<4320: "Ultra HD"
+            case 1440..<2160: "Quad HD"
+            case 1080..<1440: "Full HD"
+            case 720..<1080: "HD"
+            default: nil
+            }
+        }
+    }
 
     /// "YouTube · Channel Name · 3:12"
     public var details: String {
         var parts = [site]
         if let uploader, !uploader.isEmpty { parts.append(uploader) }
         if let duration, duration > 0 { parts.append(MediaInfo.formatDuration(duration)) }
-        if let height, hasVideo { parts.append("up to \(height)p") }
+        if let tallest = qualities.first?.height ?? height, hasVideo {
+            parts.append("up to " + (Quality(height: tallest, estimatedBytes: nil).label))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The details line with the height chosen for this download instead of the tallest on offer.
+    public func details(chosenHeight: Int?) -> String {
+        guard let chosenHeight, hasVideo else { return details }
+        var parts = [site]
+        if let uploader, !uploader.isEmpty { parts.append(uploader) }
+        if let duration, duration > 0 { parts.append(MediaInfo.formatDuration(duration)) }
+        parts.append(Quality(height: chosenHeight, estimatedBytes: nil).label)
         return parts.joined(separator: " · ")
     }
 

@@ -1,8 +1,10 @@
 import Foundation
+import os
 
 /// Downloads a link and delivers it in the format the person chose. The download lands in a hidden
-/// working folder; when it is already in the right format it is moved into place, otherwise
-/// ``ConversionService`` converts it (so a TikTok can become a GIF, a YouTube video an MP3).
+/// working folder; when it already plays everywhere in the chosen format it is moved into place,
+/// otherwise ``ConversionService`` converts it (a 4K YouTube video in VP9 becomes HEVC so QuickTime
+/// plays it; a TikTok can become a GIF, a talk an MP3).
 public struct DownloadService: Sendable {
     public let engine: DownloadEngine
     public let conversion: ConversionService
@@ -12,7 +14,8 @@ public struct DownloadService: Sendable {
         self.conversion = conversion
     }
 
-    public func download(_ media: RemoteMedia, settings: ConversionSettings, into directory: URL,
+    /// - Parameter nameSuffix: added to the title, e.g. " (1080p)" when several sizes of one video are saved.
+    public func download(_ media: RemoteMedia, settings: ConversionSettings, into directory: URL, nameSuffix: String = "",
                          progress: @escaping ProgressHandler = { _ in }) async throws -> URL {
         let workspace = directory.appending(path: ".conveta-\(UUID().uuidString)", directoryHint: .isDirectory)
         do {
@@ -23,39 +26,95 @@ public struct DownloadService: Sendable {
         defer { try? FileManager.default.removeItem(at: workspace) }
 
         let format = settings.format
-        let audioOnly = format.kind == .audio || !media.hasVideo
-        let maxHeight = settings.video.resolution == .original ? nil : settings.video.resolution.rawValue
-        let needsConversion = !Self.isReady(downloadedAs: audioOnly ? "m4a" : "mp4", for: settings)
-        let share = needsConversion ? 0.75 : 1.0
+        let container = Self.container(for: format, hasVideo: media.hasVideo)
+        let height = settings.downloadHeight ?? (settings.video.resolution == .original ? nil : settings.video.resolution.rawValue)
+        // Above 1080p sites rarely offer H.264, so expect to convert and leave room for it on the bar.
+        let likelyConversion = !Self.keepsAsIs(format) || (container == .mp4 && (height ?? 2160) > 1080)
+        let relay = ProgressRelay(progress)
+        let downloadShare = likelyConversion ? 0.6 : 0.97
 
-        let downloaded = try await engine.download(media, audioOnly: audioOnly, maxHeight: maxHeight, into: workspace) { value in
-            progress(value * share)
+        let downloaded = try await engine.download(media, container: container, maxHeight: height, into: workspace) { value in
+            relay.report(value * downloadShare)
         }
         try Task.checkCancellation()
 
-        // Name the file after the title, so the conversion and the final file carry it.
-        let named = workspace.appending(path: media.fileBaseName).appendingPathExtension(downloaded.pathExtension)
+        let baseName = media.fileBaseName + nameSuffix
+        let named = workspace.appending(path: baseName).appendingPathExtension(downloaded.pathExtension)
         try FileManager.default.moveItem(at: downloaded, to: named)
-
-        if !needsConversion, named.pathExtension.lowercased() == format.fileExtension {
-            return try OutputNaming.moveIntoPlace(named, in: directory, baseName: media.fileBaseName, pathExtension: named.pathExtension)
-        }
-        var settings = settings
-        settings.video.resolution = .original  // the download already respects the size limit
         let info = try await MediaProbe.probe(named, tools: conversion.tools)
-        return try await conversion.convert(named, info: info, settings: settings, into: directory) { value in
-            progress(share + value * (1 - share))
+
+        if Self.isReady(info, downloadedAs: named.pathExtension, for: settings) {
+            relay.report(1)
+            return try OutputNaming.moveIntoPlace(named, in: directory, baseName: baseName, pathExtension: named.pathExtension)
+        }
+        let conversionSettings = Self.conversionSettings(for: settings, info: info)
+        let start = relay.current
+        return try await conversion.convert(named, info: info, settings: conversionSettings, into: directory) { value in
+            relay.report(start + value * (1 - start))
         }
     }
 
-    /// Whether the file yt-dlp delivers can be used as is: an MP4 (H.264 + AAC) for MP4 at any quality
-    /// short of re-encoding choices, or an M4A for AAC-in-M4A.
-    static func isReady(downloadedAs ext: String, for settings: ConversionSettings) -> Bool {
-        switch settings.format {
-        case .mp4: ext == "mp4" && settings.video.frameRate == .original && settings.video.includeAudio
-            && (settings.video.codec == .h264 || settings.video.codec == .passthrough)
-        case .m4a: ext == "m4a" && settings.audio.codec == .aac
-        default: false
+    static func container(for format: OutputFormat, hasVideo: Bool) -> DownloadEngine.Container {
+        guard hasVideo, format.kind != .audio else { return .audio }
+        switch format {
+        case .webm: return .webm
+        case .mkv: return .mkv
+        default: return .mp4
         }
+    }
+
+    /// Formats a download can be delivered in without re-encoding, when the codecs allow.
+    static func keepsAsIs(_ format: OutputFormat) -> Bool {
+        [.mp4, .webm, .mkv, .m4a].contains(format)
+    }
+
+    /// Whether the downloaded file can be used as is. MP4 must play on every Apple device (H.264 or
+    /// HEVC with AAC) unless the person asked for no re-encoding; WebM and MKV are kept as served.
+    static func isReady(_ info: MediaInfo, downloadedAs ext: String, for settings: ConversionSettings) -> Bool {
+        let ext = ext.lowercased()
+        switch settings.format {
+        case .mp4:
+            let untouched = settings.video.frameRate == .original && settings.video.includeAudio
+                && (settings.video.codec == .h264 || settings.video.codec == .passthrough || settings.video.codec == .hevc)
+            return ext == "mp4" && untouched && info.playsEverywhereOnApple
+        case .webm: return ext == "webm" && settings.video.includeAudio && settings.video.frameRate == .original
+        case .mkv: return ext == "mkv" && settings.video.includeAudio && settings.video.frameRate == .original
+        case .m4a: return ext == "m4a" && settings.audio.codec == .aac
+        default: return false
+        }
+    }
+
+    /// Settings for converting a download: the size is already right; pictures taller than 1080p
+    /// become HEVC (H.264 struggles above it), and quality stays high so nothing is lost twice.
+    static func conversionSettings(for settings: ConversionSettings, info: MediaInfo) -> ConversionSettings {
+        var result = settings
+        result.video.resolution = .original
+        if [.mp4, .mov, .m4v, .mkv].contains(settings.format) {
+            let tall = (info.pixelSize.map { min($0.width, $0.height) } ?? 0) > 1080
+            if result.video.codec == .passthrough || (tall && result.video.codec == .h264) {
+                result.video.codec = tall ? .hevc : .h264
+            }
+            if result.video.quality == .compact || result.video.quality == .balanced { result.video.quality = .high }
+        }
+        return result
+    }
+}
+
+/// Keeps a progress bar moving forward across the download and the conversion that may follow.
+final class ProgressRelay: Sendable {
+    private let handler: ProgressHandler
+    private let last = OSAllocatedUnfairLock(initialState: 0.0)
+
+    init(_ handler: @escaping ProgressHandler) { self.handler = handler }
+
+    var current: Double { last.withLock { $0 } }
+
+    func report(_ value: Double) {
+        let next = last.withLock { last -> Double? in
+            guard value > last else { return nil }
+            last = value
+            return value
+        }
+        if let next { handler(next) }
     }
 }
