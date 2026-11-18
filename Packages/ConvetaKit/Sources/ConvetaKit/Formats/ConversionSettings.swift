@@ -11,9 +11,24 @@ public struct ConversionSettings: Codable, Sendable, Hashable {
     public var document = DocumentOptions()
     /// For downloads: the exact picture height to fetch; `nil` takes the best on offer.
     public var downloadHeight: Int?
+    /// For downloads: whether and how to fetch subtitles.
+    public var subtitles = SubtitleOptions()
 
     public init(format: OutputFormat) {
         self.format = format
+    }
+
+    /// Tolerant decoding: settings saved by an older version (without newer fields) still load.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        format = try c.decode(OutputFormat.self, forKey: .format)
+        video = (try? c.decodeIfPresent(VideoOptions.self, forKey: .video)) ?? VideoOptions()
+        audio = (try? c.decodeIfPresent(AudioOptions.self, forKey: .audio)) ?? AudioOptions()
+        image = (try? c.decodeIfPresent(ImageOptions.self, forKey: .image)) ?? ImageOptions()
+        animation = (try? c.decodeIfPresent(AnimationOptions.self, forKey: .animation)) ?? AnimationOptions()
+        document = (try? c.decodeIfPresent(DocumentOptions.self, forKey: .document)) ?? DocumentOptions()
+        downloadHeight = try? c.decodeIfPresent(Int.self, forKey: .downloadHeight)
+        subtitles = (try? c.decodeIfPresent(SubtitleOptions.self, forKey: .subtitles)) ?? SubtitleOptions()
     }
 }
 

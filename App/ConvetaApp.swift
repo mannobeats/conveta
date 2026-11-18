@@ -16,6 +16,7 @@ struct ConvetaApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             AppCommands(state: state, menu: menu)
+            UpdateCommands()
             InspectorCommands()
         }
 

@@ -30,6 +30,14 @@
 	<string>Open source under the MIT License.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/mannobeats/conveta/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>/IwnYwz0OU3ESUlAc46AADKWR0DageMnqJ6zQZiXdvI=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 	<key>ConvetaAppGroup</key>
 	<string>$(APP_GROUP_ID)</string>
 	<key>CFBundleURLTypes</key>

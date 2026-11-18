@@ -1,4 +1,4 @@
-FFmpeg 9.0.2, LGPL 2.1 or later, static, arm64, macOS 26.0+
+FFmpeg 9.0.2, LGPL 2.1 or later, static, arm64 x86_64, macOS 26.0+
 LAME 3.100 (LGPL), Opus 1.5.2, libogg 1.3.5, libvorbis 1.3.7, libvpx 1.15.2, libwebp 1.6.0, dav1d 1.5.2 (BSD)
 Built 2026-11-18 with scripts/build-ffmpeg.sh
 

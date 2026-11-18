@@ -312,3 +312,24 @@ struct BitrateTests {
         #expect(info("MP3", nil).effectiveAudioBitrate(256) == 256)
     }
 }
+
+@Suite("Subtitles through conversion", .enabled(if: testTools != nil))
+struct SubtitleConversionTests {
+    @Test("MKV with SRT subtitles becomes MP4 with a text track")
+    func keepsSubtitles() async throws {
+        let tools = testTools!
+        let fixtures = try Fixtures()
+        defer { fixtures.remove() }
+        let srt = fixtures.url("subs.srt")
+        try Data("1\n00:00:00,000 --> 00:00:01,000\nHello\n".utf8).write(to: srt)
+        let source = fixtures.url("Talk.mkv")
+        try await ToolRunner.run(tools.ffmpeg, ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25", "-i", srt.path,
+                                                "-t", "1", "-c:v", "libvpx-vp9", "-c:s", "srt", source.path])
+        let info = try await MediaProbe.probe(source, tools: tools)
+        let out = fixtures.url("out")
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        let result = try await ConversionService(tools: tools).convert(source, info: info, settings: ConversionSettings(format: .mp4), into: out)
+        let codecs = try await ToolRunner.run(tools.ffprobe, ["-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", result.path])
+        #expect(codecs.contains("mov_text"), "\(codecs)")
+    }
+}

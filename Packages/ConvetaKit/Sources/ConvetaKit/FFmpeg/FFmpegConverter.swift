@@ -10,17 +10,45 @@ struct FFmpegConverter: Converter {
         let arguments = try Self.arguments(for: request)
         let duration = request.info.duration ?? 0
         let throttle = ProgressThrottle(progress)
+        let onLine: @Sendable (String) -> Void = { line in
+            // -progress reports "out_time_us=12345678" several times a second.
+            guard duration > 0, line.hasPrefix("out_time_us="), let micros = Double(line.dropFirst(12)) else { return }
+            throttle.report(micros / 1_000_000 / duration * 0.99)
+        }
         do {
-            try await ToolRunner.run(tools.ffmpeg, arguments) { line in
-                // -progress reports "out_time_us=12345678" several times a second.
-                guard duration > 0, line.hasPrefix("out_time_us="), let micros = Double(line.dropFirst(12)) else { return }
-                throttle.report(micros / 1_000_000 / duration * 0.99)
+            try await ToolRunner.run(tools.ffmpeg, arguments, onLine: onLine)
+        } catch let failure as ToolRunner.Failure where Self.isSubtitleProblem(failure.message) {
+            // Picture-based subtitles (Blu-ray, DVD) can't become text tracks; convert without them.
+            do {
+                try await ToolRunner.run(tools.ffmpeg, Self.withoutSubtitles(arguments), onLine: onLine)
+            } catch let failure as ToolRunner.Failure {
+                throw ConversionError.failed(Self.explain(failure.message, format: request.settings.format))
             }
         } catch let failure as ToolRunner.Failure {
             throw ConversionError.failed(Self.explain(failure.message, format: request.settings.format))
         }
         throttle.report(1)
         return .file
+    }
+
+    static func isSubtitleProblem(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        return lower.contains("subtitle") && (lower.contains("encod") || lower.contains("text to text") || lower.contains("bitmap"))
+    }
+
+    /// The same command with subtitle streams dropped.
+    static func withoutSubtitles(_ arguments: [String]) -> [String] {
+        var result: [String] = []
+        var index = 0
+        while index < arguments.count {
+            let argument = arguments[index]
+            if argument == "-map", index + 1 < arguments.count, arguments[index + 1] == "0:s?" { index += 2; continue }
+            if argument == "-c:s", index + 1 < arguments.count { index += 2; continue }
+            result.append(argument)
+            if argument == "-dn" { result.append("-sn") }
+            index += 1
+        }
+        return result
     }
 
     /// The full FFmpeg command line for a request. Pure, so it is tested directly.
@@ -77,7 +105,15 @@ struct FFmpegConverter: Converter {
         let format = settings.format
         var args = ["-map", "0:v:0"]
         if options.includeAudio, info.hasAudio { args += ["-map", "0:a:0?"] }
-        args += ["-sn", "-dn"]
+        // Keep subtitle tracks, in the form each container understands.
+        let subtitleCodec: String? = switch format {
+        case .mp4, .mov, .m4v: "mov_text"
+        case .mkv: "copy"
+        case .webm: "webvtt"
+        default: nil
+        }
+        if let subtitleCodec { args += ["-map", "0:s?", "-c:s", subtitleCodec] } else { args += ["-sn"] }
+        args += ["-dn"]
 
         let codec = format.videoCodecs.isEmpty ? nil : (format.videoCodecs.contains(options.codec) ? options.codec : .h264)
         if codec == .passthrough {

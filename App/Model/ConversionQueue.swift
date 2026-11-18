@@ -116,24 +116,32 @@ final class ConversionQueue {
     /// Adds a link that was already read (by the link sheet): one download per chosen height,
     /// named "Title (1080p)" when there are several. Starts at once.
     func addDownloads(_ media: RemoteMedia, heights: [Int?], format: OutputFormat) {
+        addDownloads([media], heights: heights, format: format)
+    }
+
+    /// Several videos (a playlist), each at the given heights, all starting together.
+    func addDownloads(_ items: [RemoteMedia], heights: [Int?], format: OutputFormat) {
         let several = heights.count > 1
-        let added = heights.map { height -> ConversionJob in
+        let added = items.flatMap { media in heights.map { height -> ConversionJob in
             var settings = preferences.settings(for: media.kind)
             if media.kind.outputFormats.contains(format) { settings.format = format }
             settings.downloadHeight = height
+            settings.subtitles = preferences.subtitles
             let job = ConversionJob(source: media.link, settings: settings)
             job.remote = media
             job.info = media.plannedInfo
             if several, let height { job.nameSuffix = " (\(RemoteMedia.Quality(height: height, estimatedBytes: nil).label))" }
             job.state = .ready
             return job
-        }
+        } }
         jobs.append(contentsOf: added)
         convert(added)
-        if let thumbnail = media.thumbnail {
-            Task {
-                let image = await Self.image(at: thumbnail)
-                for job in added { job.thumbnail = image }
+        Task {
+            // One fetch per distinct thumbnail, a few at a time.
+            for job in added where job.thumbnail == nil {
+                guard let url = job.remote?.thumbnail else { continue }
+                let image = await Self.image(at: url)
+                for twin in added where twin.remote?.thumbnail == url { twin.thumbnail = image }
             }
         }
     }
@@ -146,6 +154,7 @@ final class ConversionQueue {
             var settings = preferences.settings(for: media.kind)
             if let format, media.kind.outputFormats.contains(format) { settings.format = format }
             settings.downloadHeight = height
+            settings.subtitles = preferences.subtitles
             job.settings = settings
             job.state = .ready
             if let thumbnail = media.thumbnail { job.thumbnail = await Self.image(at: thumbnail) }

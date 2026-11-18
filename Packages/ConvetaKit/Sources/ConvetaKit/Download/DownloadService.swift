@@ -33,7 +33,8 @@ public struct DownloadService: Sendable {
         let relay = ProgressRelay(progress)
         let downloadShare = likelyConversion ? 0.6 : 0.97
 
-        let downloaded = try await engine.download(media, container: container, maxHeight: height, into: workspace) { value in
+        let downloaded = try await engine.download(media, container: container, maxHeight: height, subtitles: settings.subtitles,
+                                                   into: workspace) { value in
             relay.report(value * downloadShare)
         }
         try Task.checkCancellation()
@@ -43,14 +44,32 @@ public struct DownloadService: Sendable {
         try FileManager.default.moveItem(at: downloaded, to: named)
         let info = try await MediaProbe.probe(named, tools: conversion.tools)
 
+        let output: URL
         if Self.isReady(info, downloadedAs: named.pathExtension, for: settings) {
             relay.report(1)
-            return try OutputNaming.moveIntoPlace(named, in: directory, baseName: baseName, pathExtension: named.pathExtension)
+            output = try OutputNaming.moveIntoPlace(named, in: directory, baseName: baseName, pathExtension: named.pathExtension)
+        } else {
+            let conversionSettings = Self.conversionSettings(for: settings, info: info)
+            let start = relay.current
+            output = try await conversion.convert(named, info: info, settings: conversionSettings, into: directory) { value in
+                relay.report(start + value * (1 - start))
+            }
         }
-        let conversionSettings = Self.conversionSettings(for: settings, info: info)
-        let start = relay.current
-        return try await conversion.convert(named, info: info, settings: conversionSettings, into: directory) { value in
-            relay.report(start + value * (1 - start))
+        try Self.placeSubtitleFiles(from: workspace, next: output)
+        return output
+    }
+
+    /// Subtitle files yt-dlp wrote ("download.en.srt") move beside the result as "Title.en.srt".
+    static func placeSubtitleFiles(from workspace: URL, next output: URL) throws {
+        let manager = FileManager.default
+        let files = (try? manager.contentsOfDirectory(at: workspace, includingPropertiesForKeys: nil)) ?? []
+        let base = output.deletingPathExtension().lastPathComponent
+        for file in files where ["srt", "vtt", "ass"].contains(file.pathExtension.lowercased()) {
+            // "download.en-US.srt" → language "en-US"
+            let parts = file.deletingPathExtension().lastPathComponent.split(separator: ".")
+            let language = parts.count > 1 ? String(parts.last!) : "subtitles"
+            _ = try OutputNaming.moveIntoPlace(file, in: output.deletingLastPathComponent(),
+                                               baseName: "\(base).\(language)", pathExtension: file.pathExtension)
         }
     }
 

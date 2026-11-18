@@ -240,6 +240,21 @@ struct NetworkDownloadTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: fixtures.folder.path).filter { $0.hasPrefix(".conveta-") }.isEmpty)
     }
 
+    @Test("Playlists and channels list their videos")
+    func playlists() async throws {
+        guard case .playlist(let list) = try await engine.read(URL(string: "https://www.youtube.com/playlist?list=PLa1F2ddGya_-UvuAqHAksYnB0qL9yWDO6")!) else {
+            Issue.record("expected a playlist"); return
+        }
+        #expect(list.entries.count > 10)
+        #expect(list.entries.allSatisfy { $0.pageURL.host()?.contains("youtube") == true })
+        guard case .playlist(let channel) = try await engine.read(URL(string: "https://www.youtube.com/@BlenderOfficial")!) else {
+            Issue.record("expected a channel"); return
+        }
+        #expect(channel.entries.count > 10)
+        guard case .single(let video) = try await engine.read(link) else { Issue.record("expected one video"); return }
+        #expect(video.title == "Me at the zoo")
+    }
+
     @Test("Engine installs from the official release with a verified checksum")
     func install() async throws {
         let folder = FileManager.default.temporaryDirectory.appending(path: "engine-\(UUID().uuidString)")
@@ -248,5 +263,109 @@ struct NetworkDownloadTests {
         try await fresh.install()
         let version = await fresh.version()
         #expect(version == (try await DownloadEngine.latestVersion()))
+    }
+}
+
+@Suite("Playlists and subtitles")
+struct PlaylistTests {
+    @Test("Which links are lists", arguments: [
+        ("https://www.youtube.com/playlist?list=PL123", true),
+        ("https://www.youtube.com/@Blender", true),
+        ("https://www.youtube.com/@Blender/videos", true),
+        ("https://www.youtube.com/channel/UC123", true),
+        ("https://www.youtube.com/watch?v=abc&list=PL123", false),
+        ("https://www.youtube.com/watch?v=abc", false),
+        ("https://youtu.be/abc", false),
+        ("https://soundcloud.com/artist/sets/album", true),
+        ("https://www.tiktok.com/@a/video/1", false),
+    ])
+    func playlistLinks(link: String, isList: Bool) {
+        #expect(DownloadEngine.isPlaylistLink(URL(string: link)!) == isList)
+    }
+
+    @Test("A flat playlist becomes entries; tabs and nested lists are skipped")
+    func flatPlaylist() throws {
+        let json = """
+        {"_type":"playlist","title":"Blender Open Movies","uploader":"Blender","extractor_key":"YoutubeTab","entries":[
+          {"_type":"url","ie_key":"Youtube","id":"aqz-KE-bpKQ","url":"https://www.youtube.com/watch?v=aqz-KE-bpKQ","title":"Big Buck Bunny","duration":635,
+           "thumbnails":[{"url":"https://i.ytimg.com/a.jpg"},{"url":"https://i.ytimg.com/b.jpg"}]},
+          {"_type":"url","ie_key":"Youtube","id":"eRsGyueVLvQ","url":"https://www.youtube.com/watch?v=eRsGyueVLvQ","title":"Sintel","duration":888},
+          {"_type":"url","ie_key":"YoutubeTab","url":"https://www.youtube.com/@Blender/shorts","title":"Shorts"},
+          {"_type":"url","id":"broken","url":"not a link"}
+        ]}
+        """
+        let link = URL(string: "https://www.youtube.com/playlist?list=PL1")!
+        let list = try #require(try DownloadEngine.playlist(from: Data(json.utf8), link: link))
+        #expect(list.title == "Blender Open Movies")
+        #expect(list.site == "YouTube")
+        #expect(list.entries.map(\.title) == ["Big Buck Bunny", "Sintel"])
+        #expect(list.entries[0].thumbnail?.absoluteString == "https://i.ytimg.com/b.jpg")
+        #expect(list.entries[0].uploader == "Blender")
+        #expect(list.totalDuration == 1523)
+        #expect(try DownloadEngine.playlist(from: Data(#"{"id":"x","title":"One video"}"#.utf8), link: link) == nil)
+    }
+
+    @Test("Channel links go to their Videos tab")
+    func channelVideos() {
+        func target(_ link: String) -> String { DownloadEngine.channelVideos(URL(string: link)!).absoluteString }
+        #expect(target("https://www.youtube.com/@Blender") == "https://www.youtube.com/@Blender/videos")
+        #expect(target("https://www.youtube.com/channel/UC1") == "https://www.youtube.com/channel/UC1/videos")
+        #expect(target("https://www.youtube.com/@Blender/shorts") == "https://www.youtube.com/@Blender/shorts")
+        #expect(target("https://www.youtube.com/playlist?list=PL1") == "https://www.youtube.com/playlist?list=PL1")
+        #expect(target("https://vimeo.com/@x") == "https://vimeo.com/@x")
+    }
+
+    @Test("A channel lists tabs; the Videos tab is opened")
+    func channelTabs() {
+        let json = """
+        {"_type":"playlist","title":"Blender","entries":[
+          {"_type":"url","ie_key":"YoutubeTab","url":"https://www.youtube.com/@Blender/shorts"},
+          {"_type":"url","ie_key":"YoutubeTab","url":"https://www.youtube.com/@Blender/videos"}]}
+        """
+        #expect(DownloadEngine.firstTab(in: Data(json.utf8))?.absoluteString == "https://www.youtube.com/@Blender/videos")
+    }
+
+    @Test("Subtitle arguments")
+    func subtitleArguments() {
+        var options = SubtitleOptions()
+        #expect(options.arguments.isEmpty)
+        options.mode = .embed
+        options.language = "fr"
+        #expect(options.arguments == ["--write-subs", "--sub-langs", "fr.*,fr", "--write-auto-subs", "--embed-subs"])
+        options.mode = .file
+        options.includeAutomatic = false
+        #expect(options.arguments == ["--write-subs", "--sub-langs", "fr.*,fr", "--convert-subs", "srt"])
+    }
+
+    @Test("Subtitle files land beside the video, named after it")
+    func sidecars() throws {
+        let fixtures = try Fixtures()
+        defer { fixtures.remove() }
+        let workspace = fixtures.url("work")
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try Data("1\n00:00:00,000 --> 00:00:01,000\nHi\n".utf8).write(to: workspace.appending(path: "download.en-US.srt"))
+        try Data("x".utf8).write(to: workspace.appending(path: "download.mp4"))
+        let output = fixtures.url("Talk.mp4")
+        try Data("v".utf8).write(to: output)
+        try DownloadService.placeSubtitleFiles(from: workspace, next: output)
+        #expect(FileManager.default.fileExists(atPath: fixtures.url("Talk.en-US.srt").path))
+    }
+
+    @Test("Settings saved by older versions still load")
+    func oldSettings() throws {
+        let old = #"{"format":"mp3","audio":{"codec":"aac","bitrate":192,"sampleRate":0,"channels":"original","bitDepth":16}}"#
+        let settings = try JSONDecoder().decode(ConversionSettings.self, from: Data(old.utf8))
+        #expect(settings.format == .mp3)
+        #expect(settings.audio.bitrate == 192)
+        #expect(settings.subtitles.mode == .off)
+        #expect(settings.downloadHeight == nil)
+    }
+
+    @Test("Dropping subtitles from a command keeps everything else")
+    func withoutSubtitles() {
+        let args = ["-i", "in", "-map", "0:v:0", "-map", "0:s?", "-c:s", "mov_text", "-dn", "-c:v", "copy", "out"]
+        #expect(FFmpegConverter.withoutSubtitles(args) == ["-i", "in", "-map", "0:v:0", "-dn", "-sn", "-c:v", "copy", "out"])
+        #expect(FFmpegConverter.isSubtitleProblem("Subtitle encoding currently only possible from text to text or bitmap to bitmap"))
+        #expect(!FFmpegConverter.isSubtitleProblem("Invalid data found"))
     }
 }

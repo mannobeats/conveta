@@ -31,6 +31,9 @@ settings:
 packages:
   ConvetaKit:
     path: Packages/ConvetaKit
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.1
 
 targets:
   Conveta:
@@ -44,6 +47,7 @@ targets:
         buildPhase: resources
     dependencies:
       - package: ConvetaKit
+      - package: Sparkle
       - target: ConvetaFinder
         embed: true
         codeSign: true

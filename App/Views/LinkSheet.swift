@@ -13,16 +13,19 @@ struct LinkSheet: View {
     @State private var phase: Phase = .idle
     @State private var heights: Set<Int> = []
     @State private var batchLimit: Int? = 1080
+    @State private var picked: Set<String> = []
 
     enum Phase: Equatable {
         case idle
         case reading
         case ready(RemoteMedia)
+        case list(Playlist)
         case failed(String)
     }
 
     private var links: [URL] { LinkDetector.links(in: text) }
     private var media: RemoteMedia? { if case .ready(let media) = phase { media } else { nil } }
+    private var playlist: Playlist? { if case .list(let list) = phase { list } else { nil } }
     private var audioOnly: Bool { format.kind == .audio || media?.hasVideo == false }
 
     var body: some View {
@@ -35,6 +38,7 @@ struct LinkSheet: View {
                 preview
             }
             formatRow
+            if !audioOnly { subtitleRow }
             footer
         }
         .padding(20)
@@ -63,6 +67,7 @@ struct LinkSheet: View {
         HStack(alignment: .top, spacing: 8) {
             TextField("Paste a link, or several, one per line", text: $text, axis: .vertical)
                 .lineLimit(1...4)
+                .fixedSize(horizontal: false, vertical: true)  // grow with long or several links instead of clipping
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(download)
             Button("Paste", systemImage: "doc.on.clipboard") {
@@ -94,6 +99,9 @@ struct LinkSheet: View {
                 .font(.callout)
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
+        case .list(let list):
+            PlaylistPanel(playlist: list, picked: $picked, limit: $batchLimit, audioOnly: audioOnly)
+                .transition(.opacity.combined(with: .move(edge: .top)))
         case .ready(let media):
             VStack(alignment: .leading, spacing: 14) {
                 PreviewCard(media: media)
@@ -131,6 +139,25 @@ struct LinkSheet: View {
         .font(.callout)
     }
 
+    private var subtitleRow: some View {
+        @Bindable var preferences = state.preferences
+        return HStack(spacing: 8) {
+            Text("Subtitles")
+            Picker("Subtitles", selection: $preferences.subtitles.mode) {
+                ForEach(SubtitleOptions.Mode.allCases) { Text($0.displayName).tag($0) }
+            }
+            .labelsHidden()
+            .fixedSize()
+            if preferences.subtitles.mode != .off {
+                Text(Locale.current.localizedString(forLanguageCode: preferences.subtitles.language) ?? preferences.subtitles.language)
+                    .foregroundStyle(.secondary)
+                    .help("Change the language in Settings → Downloads")
+            }
+            Spacer()
+        }
+        .font(.callout)
+    }
+
     private var footer: some View {
         HStack(alignment: .center) {
             Text("Download only videos you own or have permission to use.")
@@ -160,11 +187,12 @@ struct LinkSheet: View {
 
     private var canDownload: Bool {
         if links.count > 1 { return true }
+        if playlist != nil { return !picked.isEmpty }
         return media != nil && !chosenHeights.isEmpty
     }
 
     private var downloadTitle: String {
-        let count = links.count > 1 ? links.count : chosenHeights.count
+        let count = links.count > 1 ? links.count : (playlist != nil ? picked.count : chosenHeights.count)
         return count > 1 ? "Download \(count)" : "Download"
     }
 
@@ -194,15 +222,22 @@ struct LinkSheet: View {
             return
         }
         if case .ready(let current) = phase, current.link == link { return }
+        if case .list(let current) = phase, current.link == link { return }
         phase = .reading
         try? await Task.sleep(for: .milliseconds(250))  // let typing settle
         guard !Task.isCancelled else { return }
         do {
             try await state.downloader.ensureReady()
-            let media = try await state.downloader.engine.inspect(link)
+            let contents = try await state.downloader.engine.read(link)
             guard !Task.isCancelled else { return }
-            heights = Self.defaultHeights(media.qualities)
-            phase = .ready(media)
+            switch contents {
+            case .single(let media):
+                heights = Self.defaultHeights(media.qualities)
+                phase = .ready(media)
+            case .playlist(let list):
+                picked = Set(list.entries.map(\.id))
+                phase = .list(list)
+            }
         } catch {
             if !Task.isCancelled { phase = .failed(error.localizedDescription) }
         }
@@ -218,6 +253,9 @@ struct LinkSheet: View {
         guard canDownload else { return }
         if links.count > 1 {
             state.queue.addLinks(links, format: format, height: audioOnly ? nil : batchLimit, start: true)
+        } else if let playlist {
+            let chosen = playlist.entries.filter { picked.contains($0.id) }
+            state.queue.addDownloads(chosen, heights: [audioOnly ? nil : batchLimit], format: format)
         } else if let media {
             state.queue.addDownloads(media, heights: chosenHeights, format: format)
         }
@@ -378,5 +416,75 @@ private struct BatchSummary: View {
         }
         .padding(12)
         .background(.quinary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// A playlist or channel: its videos with checkboxes, and one resolution limit for all of them.
+private struct PlaylistPanel: View {
+    let playlist: Playlist
+    @Binding var picked: Set<String>
+    @Binding var limit: Int?
+    let audioOnly: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(playlist.title).font(.headline).lineLimit(1)
+                    Text(summary).font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(picked.count == playlist.entries.count ? "Select None" : "Select All") {
+                    picked = picked.count == playlist.entries.count ? [] : Set(playlist.entries.map(\.id))
+                }
+                .buttonStyle(.link)
+            }
+            List {
+                ForEach(Array(playlist.entries.enumerated()), id: \.element.id) { index, entry in
+                    Toggle(isOn: Binding(get: { picked.contains(entry.id) }, set: { on in
+                        if on { picked.insert(entry.id) } else { picked.remove(entry.id) }
+                    })) {
+                        HStack(spacing: 10) {
+                            Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary).frame(width: 26, alignment: .trailing)
+                            AsyncImage(url: entry.thumbnail) { $0.resizable().aspectRatio(contentMode: .fill) } placeholder: { Color.secondary.opacity(0.15) }
+                                .frame(width: 56, height: 32)
+                                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                            Text(entry.title).lineLimit(1)
+                            Spacer()
+                            if let duration = entry.duration { Text(MediaInfo.formatDuration(duration)).font(.callout.monospacedDigit()).foregroundStyle(.secondary) }
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                }
+            }
+            .listStyle(.bordered)
+            .alternatingRowBackgrounds()
+            .frame(height: min(CGFloat(playlist.entries.count) * 40 + 8, 260))
+            if !audioOnly {
+                HStack {
+                    Text("Resolution")
+                    Picker("Resolution", selection: $limit) {
+                        Text("Best available").tag(Int?.none)
+                        Divider()
+                        ForEach([2160, 1440, 1080, 720, 480, 360], id: \.self) { height in
+                            Text("Up to " + RemoteMedia.Quality(height: height, estimatedBytes: nil).label).tag(Int?.some(height))
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    Spacer()
+                }
+                .font(.callout)
+            }
+        }
+    }
+
+    private var summary: String {
+        var parts = ["\(picked.count) of \(playlist.entries.count) videos"]
+        if let uploader = playlist.uploader { parts.insert(uploader, at: 0) }
+        let total = playlist.entries.filter { picked.contains($0.id) }.compactMap(\.duration).reduce(0, +)
+        if total > 0 { parts.append(MediaInfo.formatDuration(total)) }
+        if playlist.entries.count >= DownloadEngine.playlistLimit { parts.append("first \(DownloadEngine.playlistLimit) shown") }
+        return parts.joined(separator: " · ")
     }
 }

@@ -32,6 +32,19 @@ private struct GeneralSettings: View {
                 }
                 .help("This Mac works best with \(Preferences.recommendedParallelJobs). More can be slower for video.")
             }
+            Section {
+                Toggle("Check for updates automatically", isOn: Binding(
+                    get: { Updates.shared.updater.automaticallyChecksForUpdates },
+                    set: { Updates.shared.updater.automaticallyChecksForUpdates = $0 }))
+                Toggle("Download and install updates in the background", isOn: Binding(
+                    get: { Updates.shared.updater.automaticallyDownloadsUpdates },
+                    set: { Updates.shared.updater.automaticallyDownloadsUpdates = $0 }))
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("Conveta \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · Free and open source")
+                    .foregroundStyle(.secondary)
+            }
             Section("When Files Are Converted") {
                 Toggle("Play a sound", isOn: $preferences.playSoundWhenDone)
                 Toggle("Notify me when Conveta is in the background", isOn: $preferences.notifyWhenDone)
@@ -131,6 +144,24 @@ private struct DownloadSettings: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                Picker("Subtitles", selection: $preferences.subtitles.mode) {
+                    ForEach(SubtitleOptions.Mode.allCases) { Text($0.displayName).tag($0) }
+                }
+                Picker("Language", selection: $preferences.subtitles.language) {
+                    ForEach(languages, id: \.self) { code in
+                        Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
+                    }
+                }
+                .disabled(preferences.subtitles.mode == .off)
+                Toggle("Use automatic captions when there are none", isOn: $preferences.subtitles.includeAutomatic)
+                    .disabled(preferences.subtitles.mode == .off)
+            } header: {
+                Text("Subtitles")
+            } footer: {
+                Text("Subtitles are embedded as a track you can turn on in QuickTime, or saved beside the video as an .srt file.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Picker("Use sign-ins from", selection: Binding(get: { preferences.cookiesBrowser ?? "" }, set: { preferences.cookiesBrowser = $0.isEmpty ? nil : $0 })) {
                     Text("No Browser").tag("")
                     Divider()
@@ -146,6 +177,13 @@ private struct DownloadSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var languages: [String] {
+        let common = ["en", "es", "fr", "de", "it", "pt", "nl", "ru", "ja", "ko", "zh", "ar", "hi", "tr", "pl", "sv"]
+        let mine = Locale.preferredLanguages.compactMap { Locale(identifier: $0).language.languageCode?.identifier }
+        var seen = Set<String>()
+        return (mine + common).filter { seen.insert($0).inserted }
     }
 
     private func engineDescription(_ downloader: Downloader) -> String {

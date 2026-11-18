@@ -28,6 +28,8 @@ final class Preferences {
     var parallelJobs: Int { didSet { store.set(parallelJobs, forKey: Key.parallel) } }
     /// A browser whose sign-ins downloads may use ("safari", "chrome"...), for posts that need an account.
     var cookiesBrowser: String? { didSet { store.set(cookiesBrowser, forKey: Key.cookies) } }
+    /// Subtitles for downloads, remembered from the link sheet.
+    var subtitles: SubtitleOptions { didSet { save(subtitles, Key.subtitles) } }
 
     @ObservationIgnored private let store: UserDefaults
 
@@ -47,6 +49,7 @@ final class Preferences {
         startImmediately = store.object(forKey: Key.startImmediately) as? Bool ?? false
         parallelJobs = store.object(forKey: Key.parallel) as? Int ?? Self.recommendedParallelJobs
         cookiesBrowser = store.string(forKey: Key.cookies)
+        subtitles = store.data(forKey: Key.subtitles).flatMap { try? JSONDecoder().decode(SubtitleOptions.self, from: $0) } ?? SubtitleOptions()
     }
 
     static var recommendedParallelJobs: Int {
@@ -81,5 +84,6 @@ final class Preferences {
         static let startImmediately = "startImmediately"
         static let parallel = "parallelJobs"
         static let cookies = "cookiesBrowser"
+        static let subtitles = "downloadSubtitles"
     }
 }

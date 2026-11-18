@@ -245,10 +245,12 @@ public struct DownloadEngine: Sendable {
     }
 
     /// Downloads `media` into `folder` and returns the file, never taller than `maxHeight`.
-    public func download(_ media: RemoteMedia, container: Container, maxHeight: Int?, into folder: URL,
-                         progress: @escaping ProgressHandler) async throws -> URL {
+    public func download(_ media: RemoteMedia, container: Container, maxHeight: Int?, subtitles: SubtitleOptions = SubtitleOptions(),
+                         into folder: URL, progress: @escaping ProgressHandler) async throws -> URL {
         guard isInstalled else { throw DownloadError.engineMissing }
-        let args = commonArguments + Self.downloadArguments(container: container, maxHeight: maxHeight, folder: folder) + [media.pageURL.absoluteString]
+        let subtitleArgs = container == .audio ? [] : subtitles.arguments
+        let args = commonArguments + Self.downloadArguments(container: container, maxHeight: maxHeight, folder: folder)
+            + subtitleArgs + [media.pageURL.absoluteString]
         let tracker = DownloadProgress(parts: container == .audio ? 1 : 2, handler: progress)
         let output: String
         do {
