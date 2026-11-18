@@ -35,7 +35,7 @@ struct VideoSection: View {
             }
             Toggle("Include Audio", isOn: bind(current, \.video.includeAudio, update))
         } header: {
-            Text("Video")
+            Text("Video Options")
         } footer: {
             Text(codec == .passthrough
                  ? "Copies the video without re-encoding: instant and lossless, but size and frame rate stay as they are. Falls back to H.264 when the codec doesn’t fit this format."
@@ -78,7 +78,7 @@ struct AudioSection: View {
                 ForEach(ChannelLayout.allCases) { Text($0.displayName).tag($0) }
             }
         } header: {
-            Text("Audio")
+            Text("Audio Options")
         } footer: {
             Text(footer(lossless: lossless))
                 .foregroundStyle(.secondary)
@@ -111,7 +111,7 @@ struct ImageSection: View {
             }
             Toggle("Remove Location and Camera Info", isOn: bind(current, \.image.stripMetadata, update))
         } header: {
-            Text("Image")
+            Text("Image Options")
         } footer: {
             Text(format.supportsTransparency || format == .pdf
                  ? "Size limits the longest side and never enlarges."
@@ -137,7 +137,7 @@ struct AnimationSection: View {
             }
             Toggle("Loop Forever", isOn: bind(current, \.animation.loops, update))
         } header: {
-            Text("Animation")
+            Text("Animation Options")
         } footer: {
             Text("GIFs grow quickly. 480 px at 15 fps suits most messages and docs.")
                 .foregroundStyle(.secondary)

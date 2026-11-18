@@ -71,6 +71,8 @@ private struct KindSettings: View {
                     KindBadge(kind: kind, size: 16)
                 }
                 .font(.headline)
+                .foregroundStyle(.primary)
+                .textCase(nil)
             } else {
                 Text("Convert To")
             }

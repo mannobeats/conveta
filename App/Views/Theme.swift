@@ -10,10 +10,10 @@ enum Theme {
 
     static func color(for kind: MediaKind) -> Color {
         switch kind {
-        case .video: .indigo
-        case .audio: .pink
+        case .video: .blue
+        case .audio: Color(red: 1.0, green: 0.36, blue: 0.32)    // coral
         case .image: .teal
-        case .document: .orange
+        case .document: Color(red: 1.0, green: 0.66, blue: 0.0)  // amber
         }
     }
 

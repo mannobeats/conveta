@@ -81,7 +81,7 @@ private struct FinderSettings: View {
                     Text("Always on").foregroundStyle(.secondary)
                 } label: {
                     Text("Services menu")
-                    Text("“Convert with Conveta” is in the Services menu of any app that has files selected.")
+                    Text("“Add to Conveta” is in the Services menu of any app that has files selected.")
                 }
             }
         }

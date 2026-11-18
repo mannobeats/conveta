@@ -67,7 +67,7 @@
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Convert with Conveta</string>
+				<string>Add to Conveta</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>convertFiles</string>
